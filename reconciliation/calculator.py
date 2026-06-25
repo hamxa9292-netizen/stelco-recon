@@ -1,16 +1,13 @@
 """
 Reconciliation Calculator
 
-Key logic:
-  - Balance b/f             = prior month Debtors c/f
-  - Balance b/f after adj   = open.pdf Total (system opening snapshot)
-  - Adjustments (1)         = Balance b/f (after adj) - Balance b/f
-  - Adjustments (2)         = system c/f - calculated c/f
-                            = can be negative (shown in red/brackets)
-
-IMPORTANT: elec_close_system must be the ACTUAL closing balance at time of
-reconciliation — not a re-printed close.pdf which may differ due to backdated
-postings. The user should confirm this value in the review step.
+Logic:
+  - Balance b/f             = prior month c/f (elec_bf)
+  - Balance b/f after adj   = open.pdf total (elec_bfadj)
+  - Adjustments (1)         = elec_bfadj - elec_bf
+  - Debtors Balance c/f     = close.pdf total (elec_close_system)
+  - Adjustments (2)         = close.pdf total - calculated c/f
+                            = automatically correct sign (positive or negative)
 """
 
 LOCATION_NAMES = {
@@ -24,15 +21,12 @@ LOCATION_NAMES = {
 def calculate(location: str, f: dict) -> dict:
     name = LOCATION_NAMES.get(location, location.upper())
 
-    # Balance b/f = prior month c/f
-    elec_bf = f.get("elec_bf", 0.0)
-    misc_bf = f.get("misc_bf", 0.0)
-
-    # Balance b/f after adjustment = open.pdf Total
+    elec_bf    = f.get("elec_bf",    0.0)
+    misc_bf    = f.get("misc_bf",    0.0)
     elec_bfadj = f.get("elec_bfadj", elec_bf)
     misc_bfadj = f.get("misc_bfadj", misc_bf)
 
-    # Adjustments (1) = b/f after adj - b/f  (can be negative)
+    # Adjustments (1) = b/f after adj - b/f
     elec_adj1 = elec_bfadj - elec_bf
     misc_adj1 = misc_bfadj - misc_bf
 
@@ -55,17 +49,13 @@ def calculate(location: str, f: dict) -> dict:
     elec_calc = elec_sub2 - elec_collection
     misc_calc = misc_sub2 - misc_collection
 
-    # System c/f — user must confirm this matches actual closing balance
-    elec_close_system = f.get("elec_close_system", 0.0)
-    misc_close_system = f.get("misc_close_system", 0.0)
+    # c/f = close.pdf total
+    elec_cf = f.get("elec_close_system", 0.0)
+    misc_cf = f.get("misc_close_system", 0.0)
 
-    # Adjustments (2) = system c/f - calculated c/f  (preserves sign correctly)
-    elec_adj2 = elec_close_system - elec_calc
-    misc_adj2 = misc_close_system - misc_calc
-
-    # Final c/f = system closing balance
-    elec_cf = elec_close_system
-    misc_cf = misc_close_system
+    # Adjustments (2) = c/f - calculated  →  correct sign automatically
+    elec_adj2 = elec_cf - elec_calc
+    misc_adj2 = misc_cf - misc_calc
 
     return {
         "location_name": name,
