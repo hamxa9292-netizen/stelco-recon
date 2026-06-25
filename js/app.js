@@ -64,12 +64,12 @@ const LOCATION_NAMES = {
 
 // Review fields shown in step 3
 const REVIEW_FIELDS = [
-  { key: "elec_bf",           label: "Balance b/f",                    misc_key: "misc_bf"           },
-  { key: "elec_adj1",         label: "Adjustments (1)",                misc_key: "misc_adj1",  optional: true },
-  { key: "elec_sales",        label: "Total Sales/Additional Revenue", misc_key: "misc_sales"        },
-  { key: "elec_credits",      label: "Credits / Fine",                 misc_key: "misc_credits"      },
-  { key: "elec_collection",   label: "Collection for the month",       misc_key: "misc_collection"   },
-  { key: "elec_close_system", label: "⚠ Debtors Balance c/f (MUST verify — re-printed close.pdf may differ)", misc_key: "misc_close_system" },
+  { key: "elec_bf",           label: "Balance b/f (prior month c/f)",                              misc_key: "misc_bf"           },
+  { key: "elec_adj1",         label: "Adjustments (1)",                                             misc_key: "misc_adj1",  optional: true },
+  { key: "elec_sales",        label: "Total Sales/Additional Revenue",                              misc_key: "misc_sales"        },
+  { key: "elec_credits",      label: "Credits / Fine",                                              misc_key: "misc_credits"      },
+  { key: "elec_collection",   label: "Collection for the month",                                    misc_key: "misc_collection"   },
+  { key: "elec_close_system", label: "⚠ Debtors Balance c/f (enter from billing system month-end)",misc_key: "misc_close_system" },
 ];
 
 // Hulhumale extra fields
