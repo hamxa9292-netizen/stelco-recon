@@ -69,7 +69,7 @@ const REVIEW_FIELDS = [
   { key: "elec_sales",        label: "Total Sales/Additional Revenue", misc_key: "misc_sales"        },
   { key: "elec_credits",      label: "Credits / Fine",                 misc_key: "misc_credits"      },
   { key: "elec_collection",   label: "Collection for the month",       misc_key: "misc_collection"   },
-  { key: "elec_close_system", label: "System Closing Balance (c/f)",   misc_key: "misc_close_system" },
+  { key: "elec_close_system", label: "⚠ Debtors Balance c/f (MUST verify — re-printed close.pdf may differ)", misc_key: "misc_close_system" },
 ];
 
 // Hulhumale extra fields
