@@ -64,12 +64,12 @@ const LOCATION_NAMES = {
 
 // Review fields shown in step 3
 const REVIEW_FIELDS = [
-  { key: "elec_bf",           label: "Balance b/f (prior month c/f)",                              misc_key: "misc_bf"           },
-  { key: "elec_adj1",         label: "Adjustments (1)",                                             misc_key: "misc_adj1",  optional: true },
-  { key: "elec_sales",        label: "Total Sales/Additional Revenue",                              misc_key: "misc_sales"        },
-  { key: "elec_credits",      label: "Credits / Fine",                                              misc_key: "misc_credits"      },
-  { key: "elec_collection",   label: "Collection for the month",                                    misc_key: "misc_collection"   },
-  { key: "elec_close_system", label: "⚠ Debtors Balance c/f (enter from billing system month-end)",misc_key: "misc_close_system" },
+  { key: "elec_bf",           label: "Balance b/f (prior month c/f)",                               misc_key: "misc_bf"           },
+  { key: "elec_adj1",         label: "Adjustments (1)",                                              misc_key: "misc_adj1",  optional: true },
+  { key: "elec_sales",        label: "Total Sales/Additional Revenue",                               misc_key: "misc_sales"        },
+  { key: "elec_credits",      label: "Credits / Fine",                                               misc_key: "misc_credits"      },
+  { key: "elec_collection",   label: "Collection for the month",                                     misc_key: "misc_collection"   },
+  { key: "elec_close_system", label: "Debtors Balance c/f (from close.pdf — verify at month-end)",  misc_key: "misc_close_system" },
 ];
 
 // Hulhumale extra fields
@@ -201,6 +201,13 @@ async function startParsing() {
   document.getElementById("reviewWrap").style.display = "none";
   document.getElementById("step3Next").style.display = "none";
 
+  // Step 1: Wake up the server first
+  document.querySelector("#parsingStatus span").textContent = "Waking up server (may take ~60 seconds on first use)…";
+  try { await fetch(`${API_URL}/`, { signal: AbortSignal.timeout(90000) }); } catch(e) {}
+
+  // Step 2: Send the files for parsing
+  document.querySelector("#parsingStatus span").textContent = "Parsing PDFs…";
+
   try {
     const form = new FormData();
     form.append("location", state.location);
@@ -213,7 +220,11 @@ async function startParsing() {
       }
     }
 
-    const res = await fetch(`${API_URL}/parse`, { method: "POST", body: form });
+    const res = await fetch(`${API_URL}/parse`, {
+      method: "POST",
+      body: form,
+      signal: AbortSignal.timeout(120000)  // 2 minute timeout
+    });
     if (!res.ok) throw new Error(await res.text());
     const data = await res.json();
     state.figures = data.figures || {};
@@ -248,7 +259,7 @@ function renderReviewTable() {
       <td>
         <input class="editable-field ${elecMissing ? "needs-input" : ""}"
                data-key="${field.key}"
-               value="${elecVal !== null ? elecVal : ""}"
+               value="${elecVal !== null && elecVal !== 0 ? elecVal : ""}"
                placeholder="${elecMissing ? "Enter value" : ""}">
       </td>
       <td>
@@ -324,7 +335,11 @@ async function generateReport() {
   form.append("report_date", state.date);
 
   try {
-    const res = await fetch(`${API_URL}/generate`, { method: "POST", body: form });
+    const res = await fetch(`${API_URL}/generate`, {
+      method: "POST",
+      body: form,
+      signal: AbortSignal.timeout(120000)
+    });
     if (!res.ok) throw new Error(await res.text());
 
     const blob = await res.blob();
