@@ -1,5 +1,5 @@
 // ── Config ────────────────────────────────────────────────────
-const API_URL = "http://localhost:8000";  // Change to Render URL after deployment
+const API_URL = "https://stelco-recon-api.onrender.com";
 
 // ── State ─────────────────────────────────────────────────────
 const state = {
