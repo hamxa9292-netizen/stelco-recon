@@ -1,17 +1,18 @@
 """
 Male' PDF Parser — verified against real PDFs.
 
-IMPORTANT - Closing Balance:
-  close.pdf when re-printed later may differ from the actual month-end value
-  due to backdated postings. Therefore elec_close_system is set to 0 and
-  must be entered manually in the review step from the actual billing system
-  snapshot taken at month-end.
+Logic:
+  - elec_bfadj        = open.pdf Total  (Balance b/f after adjustment)
+  - elec_bf           = prior month c/f (user confirms in review step)
+  - elec_close_system = close.pdf Total (Debtors Balance c/f)
+  - Adjustments (2)   = close.pdf - calculated c/f (auto-computed by calculator)
 
-Collection formula:
+NOTE: close.pdf MUST be printed at month-end, not re-printed later.
+Re-printed close.pdf may differ due to backdated postings.
+
+Collection formula (Male'):
   Electricity = Total Realised - ALL "Collection Realised - MISC BILL" lines
   MISC        = Sum of ALL "Collection Realised - MISC BILL" lines
-
-MISC BILL fix: process each PDF page separately to avoid page-break merge issues.
 """
 import pdfplumber
 import re
@@ -62,17 +63,13 @@ def _recon_totals(path):
 
 
 def parse_male(files: dict) -> dict:
-    # open.pdf = system opening = Balance b/f after adjustment
-    elec_bfadj = _total(files["open"])          if files.get("open")         else 0.0
-    misc_bfadj = _total(files["misc_open"])     if files.get("misc_open")    else 0.0
-
-    # close.pdf — used for MISC closing only (MISC is stable, rarely affected by re-print)
-    # Electricity closing must be entered manually (re-printed close.pdf may differ)
-    misc_close_system = _total(files["misc_close"]) if files.get("misc_close") else 0.0
-
-    elec_sales  = _grand_total(files["sales"])      if files.get("sales")        else 0.0
-    misc_sales  = _grand_total(files["misc_sales"]) if files.get("misc_sales")   else 0.0
-    elec_credits = _credits_grand_total(files["collection"]) if files.get("collection") else 0.0
+    elec_bfadj        = _total(files["open"])          if files.get("open")         else 0.0
+    misc_bfadj        = _total(files["misc_open"])     if files.get("misc_open")    else 0.0
+    elec_close_system = _total(files["close"])         if files.get("close")        else 0.0
+    misc_close_system = _total(files["misc_close"])    if files.get("misc_close")   else 0.0
+    elec_sales        = _grand_total(files["sales"])   if files.get("sales")        else 0.0
+    misc_sales        = _grand_total(files["misc_sales"]) if files.get("misc_sales") else 0.0
+    elec_credits      = _credits_grand_total(files["collection"]) if files.get("collection") else 0.0
 
     total_realised, misc_coll = (
         _recon_totals(files["recon"]) if files.get("recon") else (0.0, 0.0)
@@ -83,7 +80,7 @@ def parse_male(files: dict) -> dict:
         "misc_bfadj":        misc_bfadj,
         "elec_bf":           elec_bfadj,   # default; override with prior c/f in review
         "misc_bf":           misc_bfadj,
-        "elec_close_system": 0.0,           # ← must be entered manually in review step
+        "elec_close_system": elec_close_system,  # from close.pdf
         "misc_close_system": misc_close_system,
         "elec_sales":        elec_sales,
         "misc_sales":        misc_sales,
