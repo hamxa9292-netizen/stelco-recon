@@ -1,121 +1,93 @@
 """
-Hulhumale' PDF Parser
-Collection formula: Billing System Collection + Blueridge + WAMCO
+Hulhumale' PDF Parser — precise regex patterns verified against real PDFs
+Collection formula: Billing System (electric fee subtotal) + Blueridge + WAMCO
 """
 import pdfplumber, re
 
 
-def _extract_total(pdf_path: str) -> float:
-    with pdfplumber.open(pdf_path) as pdf:
-        text = "\n".join(page.extract_text() or "" for page in pdf.pages)
-    match = re.search(r"Total\s+([\d,]+\.\d{2})", text)
-    if match:
-        return float(match.group(1).replace(",", ""))
-    raise ValueError(f"Could not find Total in {pdf_path}")
+def _total(path):
+    with pdfplumber.open(path) as pdf:
+        text = "\n".join(p.extract_text() or "" for p in pdf.pages)
+    m = re.search(r'Total\s+([\d,]+\.\d{2})\s*\n', text)
+    return float(m.group(1).replace(",", "")) if m else 0.0
 
 
-def _extract_sales_grand_total(pdf_path: str) -> float:
-    with pdfplumber.open(pdf_path) as pdf:
-        text = "\n".join(page.extract_text() or "" for page in pdf.pages)
-    match = re.search(r"Grand Total\s+([\d,]+\.\d{2})", text)
-    if match:
-        return float(match.group(1).replace(",", ""))
-    raise ValueError(f"Could not find Grand Total in {pdf_path}")
+def _grand_total(path):
+    with pdfplumber.open(path) as pdf:
+        text = "\n".join(p.extract_text() or "" for p in pdf.pages)
+    m = re.search(r'Grand [Tt]otal\s+([\d,]+\.\d{2})', text)
+    return float(m.group(1).replace(",", "")) if m else 0.0
 
 
-def _extract_credits_grand_total(pdf_path: str) -> float:
-    with pdfplumber.open(pdf_path) as pdf:
-        text = "\n".join(page.extract_text() or "" for page in pdf.pages)
-    match = re.search(r"GRAND TOTAL\s+([\d,]+\.\d{2})", text)
-    if match:
-        return float(match.group(1).replace(",", ""))
-    raise ValueError(f"Could not find GRAND TOTAL in {pdf_path}")
+def _credits_total(path):
+    with pdfplumber.open(path) as pdf:
+        text = "\n".join(p.extract_text() or "" for p in pdf.pages)
+    m = re.search(r'GRAND TOTAL\s+([\d,]+\.\d{2})', text)
+    return float(m.group(1).replace(",", "")) if m else 0.0
 
 
-def _extract_cash_collection(pdf_path: str) -> dict:
+def _cash_collection(path):
     """
-    Extract from Hulhumale' Cash Collection Report:
-    - Billing System Collection (electric fee subtotal — the 69,139,011.04 line)
-    - Blueridge (Blue Ridge Other Collections)
-    - WAMCO total
+    Extract from Hulhumale Cash Collection Report:
+    - billing_system: electric fee subtotal (first of the two bottom numbers on page 1)
+    - blueridge: Blue Ridge Other Collections total (page 2)
+    - wamco: WAMCO total (page 2)
+    Pattern page1: '69,139,011.04  397,900.45\nTotal of other'
+    Pattern page2: 'Total  36,100.00  -  86,950.00  -  499,200.00  3,996,221.26  4,618,471.26'
     """
-    with pdfplumber.open(pdf_path) as pdf:
-        text = "\n".join(page.extract_text() or "" for page in pdf.pages)
+    with pdfplumber.open(path) as pdf:
+        pages = [p.extract_text() or "" for p in pdf.pages]
+
+    page1 = pages[0] if pages else ""
+    page2 = pages[1] if len(pages) > 1 else ""
 
     # Billing system electric fee subtotal
-    # Appears as a standalone number before "397,900.45" type GST subtotal
     billing_match = re.search(
-        r"([\d,]+\.\d{2})\s+[\d,]+\.\d{2}\s*\n.*?Grand total", text, re.DOTALL
+        r'([\d,]+\.\d{2})\s+([\d,]+\.\d{2})\s*\n(?:Total of other|Grand)',
+        page1
     )
-    # Fallback: look for the subtotal line pattern
-    billing_matches = re.findall(r"\n([\d,]+\.\d{2})\s+([\d,]+\.\d{2})\s*\n", text)
+    billing_system = float(billing_match.group(1).replace(",", "")) if billing_match else 0.0
 
-    # Blueridge
-    blueridge_match = re.search(
-        r"BLUE RIDGE OTHER COLLECTIONS\s*(?:\(MANAGEMENT FEE\))?\s*([\d,]+\.\d{2})", text
+    # Blueridge + WAMCO from Total row on page 2
+    # Format: Total  36,100.00  -  86,950.00  -  499,200.00  3,996,221.26  4,618,471.26
+    total_row = re.search(
+        r'Total\s+[\d,]+\.\d{2}\s+-\s+[\d,]+\.\d{2}\s+-\s+([\d,]+\.\d{2})\s+([\d,]+\.\d{2})\s+([\d,]+\.\d{2})',
+        page2
     )
-    blueridge = float(blueridge_match.group(1).replace(",", "")) if blueridge_match else 0.0
+    blueridge = float(total_row.group(1).replace(",", "")) if total_row else 0.0
+    wamco     = float(total_row.group(2).replace(",", "")) if total_row else 0.0
 
-    # WAMCO — look for WAMCO total in Other Collection table
-    wamco_match = re.search(r"Total.*?([\d,]+\.\d{2})\s+([\d,]+\.\d{2})\s*$", text, re.MULTILINE)
-    # More reliable: find the grand total row of other collections
-    other_total_match = re.search(r"(?:Grand total|GRAND TOTAL)\s+([\d,]+\.\d{2})", text)
-    grand_total = float(other_total_match.group(1).replace(",", "")) if other_total_match else 0.0
+    return billing_system, blueridge, wamco
 
-    # WAMCO = Other Total - Blueridge - Security Deposits - Temp Deposits etc
-    # Better: find WAMCO column total directly
-    wamco_matches = re.findall(r"([\d,]+\.\d{2})\s+([\d,]+\.\d{2})\s*\n\s*Total", text)
 
-    # Direct search for WAMCO total from Other Collection table
-    wamco_direct = re.search(
-        r"([\d,]+\.\d{2})\s+([\d,]+\.\d{2})\s*\n\s*(?:Total|Prepared by)", text
+def parse_hulhumale(files):
+    elec_bf           = _total(files["open"]) if files.get("open") else 0.0
+    misc_bf           = _total(files["misc_open"]) if files.get("misc_open") else 0.0
+    elec_close_system = _total(files["close"]) if files.get("close") else 0.0
+    misc_close_system = _total(files["misc_close"]) if files.get("misc_close") else 0.0
+    elec_sales        = _grand_total(files["sales"]) if files.get("sales") else 0.0
+    elec_credits      = _credits_total(files["collection"]) if files.get("collection") else 0.0
+
+    billing_system, blueridge, wamco = (
+        _cash_collection(files["cash_collection"])
+        if files.get("cash_collection") else (0.0, 0.0, 0.0)
     )
 
-    # Return raw values; let the user verify in the review step
+    # Hulhumale formula: billing_system + blueridge + wamco
+    elec_collection = billing_system + blueridge + wamco
+
     return {
-        "billing_system": 0.0,   # will be filled by user review if regex fails
-        "blueridge": blueridge,
-        "wamco": 0.0,            # will be filled by user review if regex fails
-        "grand_total": grand_total,
+        "elec_bf":           elec_bf,
+        "misc_bf":           misc_bf,
+        "elec_close_system": elec_close_system,
+        "misc_close_system": misc_close_system,
+        "elec_sales":        elec_sales,
+        "misc_sales":        0.0,
+        "elec_credits":      elec_credits,
+        "misc_credits":      0.0,
+        "billing_system":    billing_system,
+        "blueridge":         blueridge,
+        "wamco":             wamco,
+        "elec_collection":   elec_collection,
+        "misc_collection":   0.0,
     }
-
-
-def parse_hulhumale(files: dict) -> dict:
-    figures = {}
-
-    # Opening balance = April c/f (open.pdf is the April closing snapshot)
-    figures["elec_bf"] = _extract_total(files["open"])
-    figures["misc_bf"] = _extract_total(files["misc_open"])
-
-    # Closing balances (system)
-    figures["elec_close_system"] = _extract_total(files["close"])
-    figures["misc_close_system"] = _extract_total(files["misc_close"])
-
-    # Sales
-    figures["elec_sales"] = _extract_sales_grand_total(files["sales"])
-    figures["misc_sales"] = 0.0
-
-    # Credits / Fine
-    figures["elec_credits"] = _extract_credits_grand_total(files["collection"])
-    figures["misc_credits"] = 0.0
-
-    # Cash collection report (billing system + blueridge + wamco)
-    if files.get("cash_collection"):
-        cash = _extract_cash_collection(files["cash_collection"])
-        figures["billing_system"] = cash["billing_system"]
-        figures["blueridge"]      = cash["blueridge"]
-        figures["wamco"]          = cash["wamco"]
-    else:
-        figures["billing_system"] = 0.0
-        figures["blueridge"]      = 0.0
-        figures["wamco"]          = 0.0
-
-    # Collection formula: billing_system + blueridge + wamco
-    figures["elec_collection"] = (
-        figures["billing_system"] +
-        figures["blueridge"] +
-        figures["wamco"]
-    )
-    figures["misc_collection"] = 0.0
-
-    return figures
