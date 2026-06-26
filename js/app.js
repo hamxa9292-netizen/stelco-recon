@@ -31,6 +31,7 @@ const FILE_SLOTS = {
     { key: "misc_close_pdf",      label: "MISC Closing Summary",    icon: "📁", desc: "MISC Bills Debtors Summary (closing)", required: false },
     { key: "misc_sales_pdf",      label: "MISC Sales Report",       icon: "📊", desc: "MISC Bills Sales Report",             required: false },
     { key: "recon_pdf",           label: "Payment Reconciliation",  icon: "🧾", desc: "Payment Reconciliation Report Summary",required: true  },
+    { key: "collection_pdf",      label: "Credits Summary",         icon: "💳", desc: "Cash Collection Credits Summary",     required: true  },
     { key: "billing_pdf",         label: "Billing System Collection", icon: "🧮", desc: "Electric fee subtotal, excl. GST / cost of service / ERP", required: true },
     { key: "cash_collection_pdf", label: "Cash Collection Report",    icon: "🏦", desc: "Collections Dept report — Blueridge + WAMCO only",           required: true },
   ],
