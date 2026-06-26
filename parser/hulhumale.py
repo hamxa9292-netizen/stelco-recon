@@ -24,6 +24,22 @@ def _grand_total(path):
     return float(m.group(1).replace(",", "")) if m else 0.0
 
 
+def _misc_sales_total(path):
+    """
+    Grand Total from the MISC Sales Report (Sales Report Misc. Bills - <month>).
+    The label is 'Grand Total'; its value may sit on the same line OR be pushed
+    below the 'Authorized By' block depending on PDF rendering. Require thousands
+    separators so a stray date (e.g. 24.06) can't be picked up by mistake.
+    """
+    with pdfplumber.open(path) as pdf:
+        text = "\n".join(p.extract_text() or "" for p in pdf.pages)
+    m = re.search(r'Grand\s+Total[\s\S]*?(\d{1,3}(?:,\d{3})+\.\d{2})', text)
+    if m:
+        return float(m.group(1).replace(",", ""))
+    m = re.search(r'Grand\s+Total[\s\S]*?([\d,]+\.\d{2})', text)  # fallback for small totals
+    return float(m.group(1).replace(",", "")) if m else 0.0
+
+
 def _credits_total(path):
     with pdfplumber.open(path) as pdf:
         text = "\n".join(p.extract_text() or "" for p in pdf.pages)
@@ -86,7 +102,7 @@ def parse_hulhumale(files):
     elec_close_system = _total(files["close"]) if files.get("close") else 0.0
     misc_close_system = _total(files["misc_close"]) if files.get("misc_close") else 0.0
     elec_sales        = _grand_total(files["sales"]) if files.get("sales") else 0.0
-    misc_sales        = _grand_total(files["misc_sales"]) if files.get("misc_sales") else 0.0
+    misc_sales        = _misc_sales_total(files["misc_sales"]) if files.get("misc_sales") else 0.0
     elec_credits      = _credits_total(files["collection"]) if files.get("collection") else 0.0
 
     # Blueridge + WAMCO come from the Collections Dept cash collection report.
