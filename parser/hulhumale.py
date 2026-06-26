@@ -86,6 +86,7 @@ def parse_hulhumale(files):
     elec_close_system = _total(files["close"]) if files.get("close") else 0.0
     misc_close_system = _total(files["misc_close"]) if files.get("misc_close") else 0.0
     elec_sales        = _grand_total(files["sales"]) if files.get("sales") else 0.0
+    misc_sales        = _grand_total(files["misc_sales"]) if files.get("misc_sales") else 0.0
     elec_credits      = _credits_total(files["collection"]) if files.get("collection") else 0.0
 
     # Blueridge + WAMCO come from the Collections Dept cash collection report.
@@ -107,7 +108,7 @@ def parse_hulhumale(files):
         "elec_close_system": elec_close_system,
         "misc_close_system": misc_close_system,
         "elec_sales":        elec_sales,
-        "misc_sales":        0.0,
+        "misc_sales":        misc_sales,
         "elec_credits":      elec_credits,
         "misc_credits":      0.0,
         "billing_system":    billing_system,
