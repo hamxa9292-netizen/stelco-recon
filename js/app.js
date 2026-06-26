@@ -30,8 +30,8 @@ const FILE_SLOTS = {
     { key: "misc_open_pdf",       label: "MISC Opening Summary",    icon: "📂", desc: "MISC Bills Debtors Summary (opening)", required: false },
     { key: "misc_close_pdf",      label: "MISC Closing Summary",    icon: "📁", desc: "MISC Bills Debtors Summary (closing)", required: false },
     { key: "recon_pdf",           label: "Payment Reconciliation",  icon: "🧾", desc: "Payment Reconciliation Report Summary",required: true  },
-    { key: "collection_pdf",      label: "Credits Summary",         icon: "💳", desc: "Cash Collection Credits Summary",     required: true  },
-    { key: "cash_collection_pdf", label: "Cash Collection Report",  icon: "🏦", desc: "Full Cash Collection Report (Billing System + Blueridge + WAMCO)", required: true },
+    { key: "billing_pdf",         label: "Billing System Collection", icon: "🧮", desc: "Electric fee subtotal, excl. GST / cost of service / ERP", required: true },
+    { key: "cash_collection_pdf", label: "Cash Collection Report",    icon: "🏦", desc: "Collections Dept report — Blueridge + WAMCO only",           required: true },
   ],
   thilafushi: [
     { key: "open_pdf",       label: "Opening Debtors Summary", icon: "📂", desc: "Debtors Summary As At [opening date]",  required: true  },
