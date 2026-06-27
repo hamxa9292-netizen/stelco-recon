@@ -6,7 +6,7 @@ from parser.male import parse_male
 from parser.hulhumale import parse_hulhumale
 from parser.thilafushi import parse_thilafushi
 from parser.gulhi_falhu import parse_gulhi_falhu
-from parser.adjustments import apply_to_figures
+from parser.adjustments import find_adjustments, ISLAND_BY_LOCATION
 from reconciliation.calculator import calculate
 from reconciliation.generator import generate_docx
 app = FastAPI(title="STELCO Debtors Reconciliation API")
@@ -31,23 +31,19 @@ async def parse_files(
     open_pdf:       UploadFile = File(...),
     close_pdf:      UploadFile = File(...),
     sales_pdf:      UploadFile = File(...),
-    misc_open_pdf:  UploadFile = File(None),
-    misc_close_pdf: UploadFile = File(None),
+    misc_open_pdf:  UploadFile = File(...),
+    misc_close_pdf: UploadFile = File(...),
     misc_sales_pdf: UploadFile = File(None),
     recon_pdf:      UploadFile = File(...),
     collection_pdf: UploadFile = File(...),
     cash_collection_pdf: UploadFile = File(None),   # Hulhumale' only
-    adj_close_csv:  UploadFile = File(None),         # Adjustment (1) — prior month CLOSING debtors
-    adj_open_csv:   UploadFile = File(None),         # Adjustment (1) — current month OPENING debtors
 ):
     """
     Step 1 — Parse all uploaded PDFs and return extracted figures for review.
-    If the two debtors CSVs are supplied, also compute Adjustment (1) and its
-    line-item detail by diffing them.
     """
     if location not in PARSERS:
         raise HTTPException(400, f"Unknown location: {location}")
-    # Save PDF uploads to temp files
+    # Save uploads to temp files
     files = {}
     uploads = {
         "open":            open_pdf,
@@ -72,22 +68,7 @@ async def parse_files(
         files[key] = path
     try:
         figures = PARSERS[location](files)
-
-        # Adjustment (1): diff prior-month CLOSING vs current-month OPENING debtors.
-        adjustment_detail, adjustment_summary = [], None
-        if adj_close_csv is not None and adj_open_csv is not None:
-            close_bytes = await adj_close_csv.read()
-            open_bytes  = await adj_open_csv.read()
-            adjustment_detail, adjustment_summary = apply_to_figures(
-                io.BytesIO(close_bytes), io.BytesIO(open_bytes), figures, location=location
-            )
-
-        return {
-            "location": location,
-            "figures": figures,
-            "adjustment_detail": adjustment_detail,
-            "adjustment_summary": adjustment_summary,
-        }
+        return {"location": location, "figures": figures}
     except Exception as e:
         raise HTTPException(500, f"Parse error: {str(e)}")
 @app.post("/generate")
@@ -115,3 +96,34 @@ async def generate_report(
         )
     except Exception as e:
         raise HTTPException(500, f"Generation error: {str(e)}")
+# ──────────────────────────────────────────────────────────────────────
+# ADJUSTMENT TAB — independent of the reconciliation flow above.
+# Diffs prior-month CLOSING debtors vs current-month OPENING debtors and
+# returns Adjustment (1) plus the full invoice-level detail.
+# ──────────────────────────────────────────────────────────────────────
+@app.post("/adjustments")
+async def adjustments(
+    location: str = Form(...),
+    report_date: str = Form(None),
+    recon_report:  UploadFile = File(None),   # current reconciliation report (.docx/.pdf) — for the annexure
+    adj_close_csv: UploadFile = File(...),     # previous month CLOSING debtors export (.csv)
+    adj_open_csv:  UploadFile = File(...),     # current month OPENING debtors export (.csv)
+):
+    if location not in ISLAND_BY_LOCATION:
+        raise HTTPException(400, f"Unknown location: {location}")
+    try:
+        close_bytes = await adj_close_csv.read()
+        open_bytes  = await adj_open_csv.read()
+        items, summary = find_adjustments(
+            io.BytesIO(close_bytes),
+            io.BytesIO(open_bytes),
+            island=ISLAND_BY_LOCATION[location],
+        )
+        return {
+            "location": location,
+            "report_date": report_date,
+            "summary": summary,     # close_total, open_total, adjustment, counts...
+            "detail": items,        # invoice-level rows
+        }
+    except Exception as e:
+        raise HTTPException(500, f"Adjustment error: {str(e)}")
