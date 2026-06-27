@@ -34,8 +34,6 @@ const FILE_SLOTS = {
     { key: "collection_pdf",      label: "Credits Summary",         icon: "💳", desc: "Cash Collection Credits Summary",     required: true  },
     { key: "billing_pdf",         label: "Billing System Collection", icon: "🧮", desc: "Electric fee subtotal, excl. GST / cost of service / ERP", required: true },
     { key: "cash_collection_pdf", label: "Cash Collection Report",    icon: "🏦", desc: "Collections Dept report — Blueridge + WAMCO only",           required: true },
-    { key: "adj_close_csv",       label: "Prior Month Closing Debtors", icon: "🧾", desc: "Previous month CLOSING debtors export (.csv) — for Adjustment (1)", required: false, accept: ".csv" },
-    { key: "adj_open_csv",        label: "Current Month Opening Debtors", icon: "📄", desc: "This month OPENING debtors export (.csv) — for Adjustment (1)",  required: false, accept: ".csv" },
   ],
   thilafushi: [
     { key: "open_pdf",       label: "Opening Debtors Summary", icon: "📂", desc: "Debtors Summary As At [opening date]",  required: true  },
@@ -168,7 +166,7 @@ function renderUploadSlots() {
       <div class="file-input-wrap">
         <label class="file-btn" id="btn_${slot.key}">
           Choose
-          <input type="file" accept="${slot.accept || '.pdf'}" data-key="${slot.key}" onchange="onFileChosen(this)">
+          <input type="file" accept=".pdf" data-key="${slot.key}" onchange="onFileChosen(this)">
         </label>
       </div>`;
     grid.appendChild(div);
