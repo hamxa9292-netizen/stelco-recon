@@ -7,6 +7,18 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="css/style.css">
+<style>
+  /* Top tab bar (Reconciliation / Adjustment) */
+  .top-tabs { display:flex; gap:8px; padding:12px 24px; background:#fff;
+              border-bottom:1px solid #e2e8f0; }
+  .top-tab { padding:8px 18px; border:none; background:transparent; cursor:pointer;
+             font-family:inherit; font-weight:600; font-size:14px; color:#64748b;
+             border-radius:8px; transition:background .15s, color .15s; }
+  .top-tab:hover { background:#f1f5f9; }
+  .top-tab.active { background:#0f172a; color:#fff; }
+  .adj-status-ok { color:#047857; }
+  .adj-status-err { color:#b91c1c; }
+</style>
 </head>
 <body>
 
@@ -24,188 +36,247 @@
   </div>
 </header>
 
-<!-- ── Main layout ── -->
-<div class="app-body">
-
-  <!-- Sidebar -->
-  <aside class="sidebar">
-    <div class="steps-label">STEPS</div>
-    <div class="step-list" id="stepList">
-      <div class="step-item active" data-step="1">
-        <div class="step-track">
-          <div class="step-dot"></div>
-          <div class="step-line"></div>
-        </div>
-        <div class="step-info">
-          <div class="step-num">01</div>
-          <div class="step-title">Select Location</div>
-          <div class="step-desc">Choose the billing area</div>
-        </div>
-      </div>
-      <div class="step-item" data-step="2">
-        <div class="step-track">
-          <div class="step-dot"></div>
-          <div class="step-line"></div>
-        </div>
-        <div class="step-info">
-          <div class="step-num">02</div>
-          <div class="step-title">Upload Files</div>
-          <div class="step-desc">Upload the required PDFs</div>
-        </div>
-      </div>
-      <div class="step-item" data-step="3">
-        <div class="step-track">
-          <div class="step-dot"></div>
-          <div class="step-line"></div>
-        </div>
-        <div class="step-info">
-          <div class="step-num">03</div>
-          <div class="step-title">Review Figures</div>
-          <div class="step-desc">Verify and edit extracted values</div>
-        </div>
-      </div>
-      <div class="step-item" data-step="4">
-        <div class="step-track">
-          <div class="step-dot"></div>
-          <div class="step-line last"></div>
-        </div>
-        <div class="step-info">
-          <div class="step-num">04</div>
-          <div class="step-title">Generate Report</div>
-          <div class="step-desc">Download the .docx file</div>
-        </div>
-      </div>
-    </div>
-  </aside>
-
-  <!-- Main content -->
-  <main class="main-content">
-
-    <!-- ── STEP 1: Location ── -->
-    <section class="step-panel active" id="panel1">
-      <div class="panel-header">
-        <h1 class="panel-title">Select Location</h1>
-        <p class="panel-desc">Choose the billing area for this reconciliation report.</p>
-      </div>
-      <div class="location-grid">
-        <button class="loc-card" data-location="male">
-          <div class="loc-icon">♂</div>
-          <div class="loc-name">Male'</div>
-          <div class="loc-sub">Main billing area</div>
-        </button>
-        <button class="loc-card" data-location="hulhumale">
-          <div class="loc-icon">⛪</div>
-          <div class="loc-name">Hulhumale'</div>
-          <div class="loc-sub">City extension</div>
-        </button>
-        <button class="loc-card" data-location="thilafushi">
-          <div class="loc-icon">🏭</div>
-          <div class="loc-name">Thilafushi</div>
-          <div class="loc-sub">Industrial zone</div>
-        </button>
-        <button class="loc-card" data-location="gulhi_falhu">
-          <div class="loc-icon">⚓</div>
-          <div class="loc-name">Gulhi Falhu</div>
-          <div class="loc-sub">Dockyard area</div>
-        </button>
-      </div>
-
-      <div class="date-row">
-        <div class="field-group">
-          <label class="field-label">Report Month</label>
-          <input type="month" id="reportMonth" class="field-input">
-        </div>
-        <div class="field-group">
-          <label class="field-label">Report Date</label>
-          <input type="date" id="reportDate" class="field-input">
-        </div>
-      </div>
-
-      <div class="panel-actions">
-        <button class="btn-primary" id="step1Next" disabled>Continue to Upload →</button>
-      </div>
-    </section>
-
-    <!-- ── STEP 2: Upload ── -->
-    <section class="step-panel" id="panel2">
-      <div class="panel-header">
-        <h1 class="panel-title">Upload PDF Files</h1>
-        <p class="panel-desc">Upload the required reports for <strong id="locationLabel">—</strong>. All files printed from the billing system.</p>
-      </div>
-
-      <div class="upload-grid" id="uploadGrid">
-        <!-- Populated by JS based on location -->
-      </div>
-
-      <div class="panel-actions">
-        <button class="btn-secondary" onclick="goToStep(1)">← Back</button>
-        <button class="btn-primary" id="step2Next" disabled>Parse Files →</button>
-      </div>
-    </section>
-
-    <!-- ── STEP 3: Review ── -->
-    <section class="step-panel" id="panel3">
-      <div class="panel-header">
-        <h1 class="panel-title">Review Extracted Figures</h1>
-        <p class="panel-desc">Values extracted from the uploaded PDFs. Edit any figure before generating the report.</p>
-      </div>
-
-      <div class="parsing-status" id="parsingStatus">
-        <div class="spinner"></div>
-        <span>Parsing PDFs…</span>
-      </div>
-
-      <div class="review-table-wrap" id="reviewWrap" style="display:none">
-        <table class="review-table">
-          <thead>
-            <tr>
-              <th>Field</th>
-              <th>Electricity (MRF)</th>
-              <th>MISC (MRF)</th>
-            </tr>
-          </thead>
-          <tbody id="reviewBody"></tbody>
-        </table>
-        <p class="review-note">* All figures are editable. Values in red were not auto-detected — please enter manually.</p>
-      </div>
-
-      <div class="panel-actions">
-        <button class="btn-secondary" onclick="goToStep(2)">← Back</button>
-        <button class="btn-primary" id="step3Next" style="display:none" onclick="goToStep(4)">Generate Report →</button>
-      </div>
-    </section>
-
-    <!-- ── STEP 4: Generate ── -->
-    <section class="step-panel" id="panel4">
-      <div class="panel-header">
-        <h1 class="panel-title">Generate Report</h1>
-        <p class="panel-desc">Review the summary below then download your reconciliation statement.</p>
-      </div>
-
-      <div class="summary-card" id="summaryCard">
-        <div class="summary-header">
-          <span id="summaryLocation">—</span>
-          <span class="summary-badge" id="summaryMonth">—</span>
-        </div>
-        <div class="summary-grid" id="summaryGrid"></div>
-      </div>
-
-      <div class="generate-actions">
-        <button class="btn-secondary" onclick="goToStep(3)">← Back</button>
-        <button class="btn-generate" id="generateBtn" onclick="generateReport()">
-          <span id="generateBtnText">⬇ Download .docx Report</span>
-        </button>
-      </div>
-
-      <div class="success-msg" id="successMsg" style="display:none">
-        ✅ Report generated successfully! Check your downloads.
-      </div>
-      <div class="error-msg" id="errorMsg" style="display:none"></div>
-    </section>
-
-  </main>
+<!-- ── Tab bar ── -->
+<div class="top-tabs">
+  <button class="top-tab active" data-tab="recon">Reconciliation</button>
+  <button class="top-tab" data-tab="adjustment">Adjustment</button>
 </div>
 
+<!-- ════════════════════════════════════════════════════════════ -->
+<!-- RECONCILIATION TAB (your existing wizard, unchanged)          -->
+<!-- ════════════════════════════════════════════════════════════ -->
+<div id="reconTab">
+
+  <!-- ── Main layout ── -->
+  <div class="app-body">
+
+    <!-- Sidebar -->
+    <aside class="sidebar">
+      <div class="steps-label">STEPS</div>
+      <div class="step-list" id="stepList">
+        <div class="step-item active" data-step="1">
+          <div class="step-track">
+            <div class="step-dot"></div>
+            <div class="step-line"></div>
+          </div>
+          <div class="step-info">
+            <div class="step-num">01</div>
+            <div class="step-title">Select Location</div>
+            <div class="step-desc">Choose the billing area</div>
+          </div>
+        </div>
+        <div class="step-item" data-step="2">
+          <div class="step-track">
+            <div class="step-dot"></div>
+            <div class="step-line"></div>
+          </div>
+          <div class="step-info">
+            <div class="step-num">02</div>
+            <div class="step-title">Upload Files</div>
+            <div class="step-desc">Upload the required PDFs</div>
+          </div>
+        </div>
+        <div class="step-item" data-step="3">
+          <div class="step-track">
+            <div class="step-dot"></div>
+            <div class="step-line"></div>
+          </div>
+          <div class="step-info">
+            <div class="step-num">03</div>
+            <div class="step-title">Review Figures</div>
+            <div class="step-desc">Verify and edit extracted values</div>
+          </div>
+        </div>
+        <div class="step-item" data-step="4">
+          <div class="step-track">
+            <div class="step-dot"></div>
+            <div class="step-line last"></div>
+          </div>
+          <div class="step-info">
+            <div class="step-num">04</div>
+            <div class="step-title">Generate Report</div>
+            <div class="step-desc">Download the .docx file</div>
+          </div>
+        </div>
+      </div>
+    </aside>
+
+    <!-- Main content -->
+    <main class="main-content">
+
+      <!-- ── STEP 1: Location ── -->
+      <section class="step-panel active" id="panel1">
+        <div class="panel-header">
+          <h1 class="panel-title">Select Location</h1>
+          <p class="panel-desc">Choose the billing area for this reconciliation report.</p>
+        </div>
+        <div class="location-grid">
+          <button class="loc-card" data-location="male">
+            <div class="loc-icon">♂</div>
+            <div class="loc-name">Male'</div>
+            <div class="loc-sub">Main billing area</div>
+          </button>
+          <button class="loc-card" data-location="hulhumale">
+            <div class="loc-icon">⛪</div>
+            <div class="loc-name">Hulhumale'</div>
+            <div class="loc-sub">City extension</div>
+          </button>
+          <button class="loc-card" data-location="thilafushi">
+            <div class="loc-icon">🏭</div>
+            <div class="loc-name">Thilafushi</div>
+            <div class="loc-sub">Industrial zone</div>
+          </button>
+          <button class="loc-card" data-location="gulhi_falhu">
+            <div class="loc-icon">⚓</div>
+            <div class="loc-name">Gulhi Falhu</div>
+            <div class="loc-sub">Dockyard area</div>
+          </button>
+        </div>
+
+        <div class="date-row">
+          <div class="field-group">
+            <label class="field-label">Report Month</label>
+            <input type="month" id="reportMonth" class="field-input">
+          </div>
+          <div class="field-group">
+            <label class="field-label">Report Date</label>
+            <input type="date" id="reportDate" class="field-input">
+          </div>
+        </div>
+
+        <div class="panel-actions">
+          <button class="btn-primary" id="step1Next" disabled>Continue to Upload →</button>
+        </div>
+      </section>
+
+      <!-- ── STEP 2: Upload ── -->
+      <section class="step-panel" id="panel2">
+        <div class="panel-header">
+          <h1 class="panel-title">Upload PDF Files</h1>
+          <p class="panel-desc">Upload the required reports for <strong id="locationLabel">—</strong>. All files printed from the billing system.</p>
+        </div>
+
+        <div class="upload-grid" id="uploadGrid">
+          <!-- Populated by JS based on location -->
+        </div>
+
+        <div class="panel-actions">
+          <button class="btn-secondary" onclick="goToStep(1)">← Back</button>
+          <button class="btn-primary" id="step2Next" disabled>Parse Files →</button>
+        </div>
+      </section>
+
+      <!-- ── STEP 3: Review ── -->
+      <section class="step-panel" id="panel3">
+        <div class="panel-header">
+          <h1 class="panel-title">Review Extracted Figures</h1>
+          <p class="panel-desc">Values extracted from the uploaded PDFs. Edit any figure before generating the report.</p>
+        </div>
+
+        <div class="parsing-status" id="parsingStatus">
+          <div class="spinner"></div>
+          <span>Parsing PDFs…</span>
+        </div>
+
+        <div class="review-table-wrap" id="reviewWrap" style="display:none">
+          <table class="review-table">
+            <thead>
+              <tr>
+                <th>Field</th>
+                <th>Electricity (MRF)</th>
+                <th>MISC (MRF)</th>
+              </tr>
+            </thead>
+            <tbody id="reviewBody"></tbody>
+          </table>
+          <p class="review-note">* All figures are editable. Values in red were not auto-detected — please enter manually.</p>
+        </div>
+
+        <div class="panel-actions">
+          <button class="btn-secondary" onclick="goToStep(2)">← Back</button>
+          <button class="btn-primary" id="step3Next" style="display:none" onclick="goToStep(4)">Generate Report →</button>
+        </div>
+      </section>
+
+      <!-- ── STEP 4: Generate ── -->
+      <section class="step-panel" id="panel4">
+        <div class="panel-header">
+          <h1 class="panel-title">Generate Report</h1>
+          <p class="panel-desc">Review the summary below then download your reconciliation statement.</p>
+        </div>
+
+        <div class="summary-card" id="summaryCard">
+          <div class="summary-header">
+            <span id="summaryLocation">—</span>
+            <span class="summary-badge" id="summaryMonth">—</span>
+          </div>
+          <div class="summary-grid" id="summaryGrid"></div>
+        </div>
+
+        <div class="generate-actions">
+          <button class="btn-secondary" onclick="goToStep(3)">← Back</button>
+          <button class="btn-generate" id="generateBtn" onclick="generateReport()">
+            <span id="generateBtnText">⬇ Download .docx Report</span>
+          </button>
+        </div>
+
+        <div class="success-msg" id="successMsg" style="display:none">
+          ✅ Report generated successfully! Check your downloads.
+        </div>
+        <div class="error-msg" id="errorMsg" style="display:none"></div>
+      </section>
+
+    </main>
+  </div>
+
+</div><!-- /#reconTab -->
+
+<!-- ════════════════════════════════════════════════════════════ -->
+<!-- ADJUSTMENT TAB                                                 -->
+<!-- ════════════════════════════════════════════════════════════ -->
+<div id="adjustmentTab" style="display:none;">
+  <div class="app-body">
+    <main class="main-content">
+      <section class="step-panel active">
+        <div class="panel-header">
+          <h1 class="panel-title">Adjustment Details</h1>
+          <p class="panel-desc">
+            Generate the “Adjustment Details Accounts In Opening &amp; Closing Debtors” file by
+            diffing the prior-month <strong>closing</strong> debtors against the current-month
+            <strong>opening</strong> debtors. Amounts are exact; reasons are auto-classified and
+            low-confidence rows are flagged on a Review sheet.
+          </p>
+        </div>
+
+        <div class="date-row">
+          <div class="field-group">
+            <label class="field-label">Location</label>
+            <select id="adjLocation" class="field-input">
+              <option value="male">Male'</option>
+              <option value="hulhumale">Hulhumale'</option>
+              <option value="thilafushi">Thilafushi</option>
+              <option value="gulhi_falhu">Gulhi Falhu</option>
+            </select>
+          </div>
+          <div class="field-group">
+            <label class="field-label">Adjustment Month</label>
+            <input type="month" id="adjMonth" class="field-input">
+          </div>
+        </div>
+
+        <div class="upload-grid" id="adjUploadGrid"></div>
+
+        <div class="panel-actions">
+          <button class="btn-primary" id="adjGenerateBtn" disabled>⬇ Generate Adjustment File</button>
+        </div>
+
+        <p class="review-note" id="adjStatus"></p>
+      </section>
+    </main>
+  </div>
+</div><!-- /#adjustmentTab -->
+
 <script src="js/app.js"></script>
+<script src="js/adjustment.js"></script>
 </body>
 </html>
