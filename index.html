@@ -9,26 +9,39 @@
 <link rel="stylesheet" href="css/style.css">
 <style>
   /* Top tab bar (Reconciliation / Adjustment) */
- .top-tabs {
-  display: flex !important;
-  gap: 8px;
-  padding: 12px 24px;
-  background: #fff;
-  border-bottom: 1px solid #e2e8f0;
-  position: fixed;
-  top: 60px;
-  left: 0;
-  right: 0;
-  z-index: 101;
-}
-.top-tab { padding:8px 18px; border:none; background:transparent; cursor:pointer;
-           font-family:inherit; font-weight:600; font-size:14px; color:#64748b;
-           border-radius:8px; transition:background .15s, color .15s; }
-.top-tab:hover { background:#f1f5f9; }
-.top-tab.active { background:#0f172a; color:#fff; }
-.app-body { padding-top: 58px; }
-.adj-status-ok { color:#047857; }
-.adj-status-err { color:#b91c1c; }
+  .top-tabs { display:flex; gap:8px; padding:12px 24px; background:#fff;
+              border-bottom:1px solid #e2e8f0; }
+  .top-tab { padding:8px 18px; border:none; background:transparent; cursor:pointer;
+             font-family:inherit; font-weight:600; font-size:14px; color:#64748b;
+             border-radius:8px; transition:background .15s, color .15s; }
+  .top-tab:hover { background:#f1f5f9; }
+  .top-tab.active { background:#0f172a; color:#fff; }
+  .adj-status-ok { color:#047857; }
+  .adj-status-err { color:#b91c1c; }
+
+  /* Adjustment tab two-column layout */
+  .adj-layout { display:flex; gap:28px; align-items:flex-start; flex-wrap:wrap; }
+  .adj-left { flex:1 1 480px; min-width:320px; }
+  .adj-right { flex:0 0 340px; width:340px; background:#fff; border:1px solid #e2e8f0;
+               border-radius:14px; padding:18px 18px 8px; }
+  .work-title { font-weight:700; font-size:14px; color:#0f172a; margin-bottom:14px; }
+  .work-steps { position:relative; }
+  .work-step { display:flex; gap:12px; padding-bottom:18px; position:relative; }
+  .work-step:not(:last-child)::before { content:""; position:absolute; left:13px; top:26px;
+              bottom:0; width:2px; background:#e2e8f0; }
+  .work-step.done:not(:last-child)::before { background:#34d399; }
+  .work-dot { flex:0 0 26px; width:26px; height:26px; border-radius:50%; display:flex;
+              align-items:center; justify-content:center; font-size:12px; font-weight:700;
+              background:#e2e8f0; color:#64748b; z-index:1; transition:.25s; }
+  .work-step.active .work-dot { background:#f59e0b; color:#fff; box-shadow:0 0 0 4px #fde68a; }
+  .work-step.done .work-dot { background:#10b981; color:#fff; }
+  .work-step.error .work-dot { background:#ef4444; color:#fff; }
+  .work-body { flex:1; }
+  .work-step-title { font-size:13px; font-weight:600; color:#0f172a; }
+  .work-step-desc { font-size:12px; color:#94a3b8; margin-top:2px; }
+  .work-step-val { font-size:12px; font-weight:600; color:#2563eb; margin-top:4px; min-height:1px; }
+  .work-step.pending .work-step-title { color:#94a3b8; }
+  @media (max-width:900px){ .adj-right{ flex-basis:100%; width:100%; } }
 </style>
 </head>
 <body>
@@ -259,29 +272,38 @@
           </p>
         </div>
 
-        <div class="date-row">
-          <div class="field-group">
-            <label class="field-label">Location</label>
-            <select id="adjLocation" class="field-input">
-              <option value="male">Male'</option>
-              <option value="hulhumale">Hulhumale'</option>
-              <option value="thilafushi">Thilafushi</option>
-              <option value="gulhi_falhu">Gulhi Falhu</option>
-            </select>
+        <div class="adj-layout">
+          <div class="adj-left">
+            <div class="date-row">
+              <div class="field-group">
+                <label class="field-label">Location</label>
+                <select id="adjLocation" class="field-input">
+                  <option value="male">Male'</option>
+                  <option value="hulhumale">Hulhumale'</option>
+                  <option value="thilafushi">Thilafushi</option>
+                  <option value="gulhi_falhu">Gulhi Falhu</option>
+                </select>
+              </div>
+              <div class="field-group">
+                <label class="field-label">Adjustment Month</label>
+                <input type="month" id="adjMonth" class="field-input">
+              </div>
+            </div>
+
+            <div class="upload-grid" id="adjUploadGrid"></div>
+
+            <div class="panel-actions">
+              <button class="btn-primary" id="adjGenerateBtn" disabled>⬇ Generate Adjustment File</button>
+            </div>
+
+            <p class="review-note" id="adjStatus"></p>
           </div>
-          <div class="field-group">
-            <label class="field-label">Adjustment Month</label>
-            <input type="month" id="adjMonth" class="field-input">
-          </div>
+
+          <aside class="adj-right">
+            <div class="work-title">How the adjustment is found</div>
+            <div class="work-steps" id="adjWorking"></div>
+          </aside>
         </div>
-
-        <div class="upload-grid" id="adjUploadGrid"></div>
-
-        <div class="panel-actions">
-          <button class="btn-primary" id="adjGenerateBtn" disabled>⬇ Generate Adjustment File</button>
-        </div>
-
-        <p class="review-note" id="adjStatus"></p>
       </section>
     </main>
   </div>
