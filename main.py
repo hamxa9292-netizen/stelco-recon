@@ -17,6 +17,8 @@ app.add_middleware(
     allow_origins=["*"],
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["X-Adjustment-Total", "X-Adjustment-Rows",
+                    "X-Adjustment-Review", "X-Adjustment-Summary"],
 )
 PARSERS = {
     "male":       parse_male,
@@ -133,13 +135,16 @@ async def adjustments(
             f"{location.upper()}_{month.strftime('%Y_%m')}_Adjustment_Details.xlsx"
         )
         write_xlsx(items, summary, location, month, out_path)
+        import base64
+        summary_b64 = base64.b64encode(json.dumps(summary).encode()).decode()
         return FileResponse(
             out_path,
             media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             filename=os.path.basename(out_path),
             headers={"X-Adjustment-Total": str(summary["total_adjustment"]),
                      "X-Adjustment-Rows": str(summary["n_rows"]),
-                     "X-Adjustment-Review": str(summary["n_review"])},
+                     "X-Adjustment-Review": str(summary["n_review"]),
+                     "X-Adjustment-Summary": summary_b64},
         )
     except HTTPException:
         raise
