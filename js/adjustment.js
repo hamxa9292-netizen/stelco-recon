@@ -41,10 +41,91 @@ function renderAdjustmentTab() {
     grid.appendChild(div);
   });
 
+  renderWorking();
+
   const loc = document.getElementById("adjLocation");
   if (loc) loc.addEventListener("change", e => { adjState.location = e.target.value; checkAdj(); });
   const mon = document.getElementById("adjMonth");
   if (mon) mon.addEventListener("change", e => { adjState.month = e.target.value; checkAdj(); });
+}
+
+// ── Step visualizer ────────────────────────────────────────────
+const adjFmt = n => (n === null || n === undefined || isNaN(n)) ? ""
+  : Number(n).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+// Each step mirrors the manual method; fill() derives its live value from the summary.
+const WORK_STEPS = [
+  { t: "Compare closing vs opening", d: "VLOOKUP each invoice's balance across both files",
+    fill: s => `Closing ${adjFmt(s.close_total)} · Opening ${adjFmt(s.open_total)}` },
+  { t: "Subtract & drop matches", d: "open − close per invoice; zero rows removed",
+    fill: s => `${s.n_rows} adjustments · net ${adjFmt(s.total_adjustment)}` },
+  { t: "Back-dated payment entries", d: "same invoice in both — balances netted",
+    fill: s => `${s.reason_counts["Back Dated Payment Entry"] || 0} rows` },
+  { t: "Cancelled & re-created invoices", d: "paired by account + ref (+ small-bill prints)",
+    fill: s => `${s.reason_counts["The invoice was created after the report was taken"] || 0} created · `
+             + `${s.reason_counts["The bill was amended after the report was taken"] || 0} amended · `
+             + `${s.reason_counts["Small bill print"] || 0} small-bill` },
+  { t: "Cancelled payments", d: "invoice with a payment entry and a balance",
+    fill: s => `${s.reason_counts["Payment Cancelled Entry"] || 0} rows` },
+  { t: "Finalise & flag", d: "build the file; flag low-confidence rows",
+    fill: s => `Total ${adjFmt(s.total_adjustment)} · ${s.n_review} flagged` },
+];
+
+let workTimer = null;
+
+function renderWorking() {
+  const wrap = document.getElementById("adjWorking");
+  if (!wrap) return;
+  wrap.innerHTML = "";
+  WORK_STEPS.forEach((st, i) => {
+    const row = document.createElement("div");
+    row.className = "work-step pending";
+    row.id = `work_${i}`;
+    row.innerHTML = `
+      <div class="work-dot">${i + 1}</div>
+      <div class="work-body">
+        <div class="work-step-title">${st.t}</div>
+        <div class="work-step-desc">${st.d}</div>
+        <div class="work-step-val" id="workval_${i}"></div>
+      </div>`;
+    wrap.appendChild(row);
+  });
+}
+
+function setWorkState(i, state) {
+  const row = document.getElementById(`work_${i}`);
+  if (!row) return;
+  row.className = `work-step ${state}`;
+  if (state !== "active" && state !== "error") row.querySelector(".work-dot").textContent = state === "done" ? "✓" : (i + 1);
+}
+
+function startWorkingAnimation() {
+  renderWorking();
+  let i = 0;
+  setWorkState(0, "active");
+  workTimer = setInterval(() => {
+    setWorkState(i, "done");
+    i++;
+    if (i < WORK_STEPS.length) setWorkState(i, "active");
+    else clearInterval(workTimer);
+  }, 750);
+}
+
+function finishWorking(summary) {
+  clearInterval(workTimer);
+  WORK_STEPS.forEach((st, i) => {
+    setWorkState(i, "done");
+    const v = document.getElementById(`workval_${i}`);
+    if (v) try { v.textContent = st.fill(summary); } catch (e) {}
+  });
+}
+
+function errorWorking() {
+  clearInterval(workTimer);
+  for (let i = 0; i < WORK_STEPS.length; i++) {
+    const row = document.getElementById(`work_${i}`);
+    if (row && row.classList.contains("active")) { setWorkState(i, "error"); break; }
+  }
 }
 
 function onAdjFileChosen(input) {
@@ -69,7 +150,9 @@ async function generateAdjustment() {
   const btn = document.getElementById("adjGenerateBtn");
   const status = document.getElementById("adjStatus");
   btn.disabled = true;
+  status.className = "review-note";
   status.textContent = "Waking up server, then generating… (first run can take ~60s)";
+  startWorkingAnimation();
 
   try {
     try { await fetch(`${ADJ_API_URL}/`, { signal: AbortSignal.timeout(90000) }); } catch (e) {}
@@ -88,6 +171,11 @@ async function generateAdjustment() {
     const total  = res.headers.get("X-Adjustment-Total");
     const rows   = res.headers.get("X-Adjustment-Rows");
     const review = res.headers.get("X-Adjustment-Review");
+    let summary = null;
+    const sumHdr = res.headers.get("X-Adjustment-Summary");
+    if (sumHdr) { try { summary = JSON.parse(atob(sumHdr)); } catch (e) {} }
+    if (summary) finishWorking(summary);
+    else { clearInterval(workTimer); WORK_STEPS.forEach((_, i) => setWorkState(i, "done")); }
 
     const blob = await res.blob();
     const url = URL.createObjectURL(blob);
@@ -97,11 +185,14 @@ async function generateAdjustment() {
     a.click();
     URL.revokeObjectURL(url);
 
+    status.className = "review-note adj-status-ok";
     status.innerHTML =
-      `✅ Generated. Total Adjustment: <strong>${Number(total).toLocaleString("en-US",{minimumFractionDigits:2})}</strong> · `
+      `✅ Generated. Total Adjustment: <strong>${adjFmt(total)}</strong> · `
       + `${rows} rows · <strong>${review}</strong> flagged for review (see the Review sheet). `
       + `Two transaction-only entries ("bill value 0", "sale date &gt; payment date") can't be derived — add manually if needed.`;
   } catch (err) {
+    errorWorking();
+    status.className = "review-note adj-status-err";
     status.textContent = `Error: ${err.message}`;
   } finally {
     btn.disabled = false;
