@@ -9,8 +9,16 @@
 <link rel="stylesheet" href="css/style.css">
 <style>
   /* Top tab bar (Reconciliation / Adjustment) */
-  .top-tabs { display:flex; gap:8px; padding:12px 24px; background:#fff;
-              border-bottom:1px solid #e2e8f0; }
+  ..top-tabs {
+  display: flex !important;
+  position: relative;
+  z-index: 5;
+  gap: 8px;
+  padding: 12px 24px;
+  background: #fff;
+  border-bottom: 1px solid #e2e8f0;
+  margin-top: 8px;
+}
   .top-tab { padding:8px 18px; border:none; background:transparent; cursor:pointer;
              font-family:inherit; font-weight:600; font-size:14px; color:#64748b;
              border-radius:8px; transition:background .15s, color .15s; }
