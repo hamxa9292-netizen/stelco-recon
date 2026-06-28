@@ -143,6 +143,9 @@ def identify(close_src, open_src, location, report_cutoff=None):
              if (i not in close) or (i not in openf) or abs(openf[i]["bal"] - close[i]["bal"]) > 0.005]
 
     items.sort(key=lambda x: (0 if x["section"] == "SALES" else 1, x["reason"], x["account"]))
+    rc = {}
+    for it in items:
+        rc[it["reason"]] = rc.get(it["reason"], 0) + 1
     summary = dict(
         close_total=round(sum(v["bal"] for v in close.values()), 2),
         open_total=round(sum(v["bal"] for v in openf.values()), 2),
@@ -153,6 +156,7 @@ def identify(close_src, open_src, location, report_cutoff=None):
         n_payment=sum(1 for it in items if it["section"] == "PAYMENT"),
         n_review=sum(1 for it in items if it.get("review")),
         n_rows=len(items),
+        reason_counts=rc,
     )
     return items, summary
 
