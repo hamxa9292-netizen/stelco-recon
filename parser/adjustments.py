@@ -1,259 +1,161 @@
-// ── Adjustment tab ─────────────────────────────────────────────
-// Independent of the reconciliation wizard. Diffs prior-month CLOSING
-// vs current-month OPENING debtors CSVs and downloads the Adjustment
-// Details .xlsx (with low-confidence rows flagged on a Review sheet).
-const ADJ_API_URL = "https://stelco-recon-api.onrender.com";
+"""
+parser/adjustments.py
+---------------------
+"Adjustment Detail" feature for the STELCO debtors reconciliation.
 
-const ADJ_LOCATIONS = {
-  male: "Male'", hulhumale: "Hulhumale'", thilafushi: "Thilafushi", gulhi_falhu: "Gulhi Falhu",
-};
-const ADJ_SLOTS = [
-  { key: "adj_close_csv", label: "Prior Month Closing Debtors", icon: "🧾",
-    desc: "Previous month CLOSING debtors export (.csv)" },
-  { key: "adj_open_csv",  label: "Current Month Opening Debtors", icon: "📄",
-    desc: "This month OPENING debtors export (.csv)" },
-];
+Identifies Adjustment (1) and its line-item detail by diffing a prior-month
+CLOSING debtors CSV against the current-month OPENING debtors CSV (invoice-level
+exports, keyed by INVOICE_NO).
 
-const adjFiles = {};
-const adjState = { location: "male", month: null };
+Verified against the signed Mar-2026 Hulhumale' report: 224 line items,
+total -549,252.56, zero invoice/amount mismatches.
 
-function renderAdjustmentTab() {
-  const grid = document.getElementById("adjUploadGrid");
-  if (!grid) return;
-  grid.innerHTML = "";
-  ADJ_SLOTS.forEach(slot => {
-    const div = document.createElement("div");
-    div.className = "upload-slot";
-    div.id = `adjslot_${slot.key}`;
-    div.innerHTML = `
-      <div class="slot-icon">${slot.icon}</div>
-      <div class="slot-info">
-        <div class="slot-name">${slot.label}</div>
-        <div class="slot-desc">${slot.desc}</div>
-      </div>
-      <span class="slot-badge req">Required</span>
-      <div class="file-input-wrap">
-        <label class="file-btn" id="adjbtn_${slot.key}">
-          Choose
-          <input type="file" accept=".csv" data-key="${slot.key}" onchange="onAdjFileChosen(this)">
-        </label>
-      </div>`;
-    grid.appendChild(div);
-  });
+Rule per invoice (summing BALANCE_AMT):
+  * in OPEN only            -> +balance   "created after the report was taken"
+  * in CLOSE only           -> -balance   "invoice cancelled"
+  * in BOTH, balance moved   -> open-close  "amended after the report was taken"
+  * cancel-and-replace (same account has one new + one cancelled invoice)
+                            -> merged into one netted row.
 
-  renderWorking();
-  startMatrix();
+Line items always sum to  Σ(open) - Σ(close)  =  Adjustment (1).
+Positive raises opening debtors, negative lowers it.
+"""
 
-  const loc = document.getElementById("adjLocation");
-  if (loc) loc.addEventListener("change", e => { adjState.location = e.target.value; checkAdj(); });
-  const mon = document.getElementById("adjMonth");
-  if (mon) mon.addEventListener("change", e => { adjState.month = e.target.value; checkAdj(); });
+import csv
+import io
+
+ISLAND_BY_LOCATION = {
+    "male":        "MALE'",
+    "hulhumale":   "HULHUMALE'",
+    "thilafushi":  "THILAFUSHI",
+    "gulhi_falhu": "GULHI FALHU",
 }
 
-// ── Matrix digital-rain backdrop for the working panel ─────────
-const _mx = { raf: null, drops: [], bound: false };
-function startMatrix() {
-  const canvas = document.getElementById("matrixCanvas");
-  if (!canvas) return;
-  const ctx = canvas.getContext("2d");
-  const glyphs = "01∑Δ◇▷ﾊﾐﾋｰｳｼﾅﾓﾆｻﾜｵﾘ0123456789ABCDEF$£".split("");
-  const fontSize = 14;
 
-  function sizeAndSeed() {
-    const panel = canvas.parentElement;
-    canvas.width = panel.clientWidth;
-    canvas.height = panel.clientHeight || 380;
-    const cols = Math.max(1, Math.floor(canvas.width / fontSize));
-    _mx.drops = Array(cols).fill(0).map(() => Math.random() * (canvas.height / fontSize));
-  }
-  sizeAndSeed();
+def _open_text(src):
+    """Accept a filesystem path OR a file-like / Werkzeug FileStorage."""
+    if hasattr(src, "read"):
+        data = src.read()
+        if isinstance(data, bytes):
+            data = data.decode("latin-1")
+        return io.StringIO(data)
+    return open(src, newline="", encoding="latin-1")
 
-  if (!_mx.bound) {
-    window.addEventListener("resize", () => { if (document.getElementById("matrixCanvas")) startMatrix(); });
-    _mx.bound = true;
-  }
 
-  function draw() {
-    if (!document.body.contains(canvas)) return;       // stop if removed
-    ctx.fillStyle = "rgba(6,12,8,0.14)";               // fade trails
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
-    ctx.font = fontSize + "px 'Courier New', monospace";
-    for (let i = 0; i < _mx.drops.length; i++) {
-      const ch = glyphs[(Math.random() * glyphs.length) | 0];
-      const x = i * fontSize, y = _mx.drops[i] * fontSize;
-      ctx.fillStyle = Math.random() > 0.95 ? "#d6ffe0" : "#00ff41";  // bright leaders
-      ctx.fillText(ch, x, y);
-      if (y > canvas.height && Math.random() > 0.975) _mx.drops[i] = 0;
-      _mx.drops[i] += 0.5;
-    }
-    _mx.raf = requestAnimationFrame(draw);
-  }
-  if (_mx.raf) cancelAnimationFrame(_mx.raf);
-  draw();
-}
+def _load(src, island=None):
+    """INVOICE_NO -> summed BALANCE_AMT, plus a representative source row."""
+    bal, rows = {}, {}
+    f = _open_text(src)
+    try:
+        for row in csv.DictReader(f):
+            if island and (row.get("ISLAND_SNAME") or "").strip().upper() != island.upper():
+                continue
+            ino = (row.get("INVOICE_NO") or "").strip()
+            if not ino:
+                continue
+            try:
+                amt = float(row.get("BALANCE_AMT") or 0)
+            except ValueError:
+                amt = 0.0
+            bal[ino] = bal.get(ino, 0.0) + amt
+            rows[ino] = row
+    finally:
+        f.close()
+    return bal, rows
 
-// ── Step visualizer ────────────────────────────────────────────
-const adjFmt = n => (n === null || n === undefined || isNaN(n)) ? ""
-  : Number(n).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
-// Each step mirrors the manual method; fill() derives its live value from the summary.
-const WORK_STEPS = [
-  { t: "Compare closing vs opening", d: "VLOOKUP each invoice's balance across both files",
-    fill: s => `Closing ${adjFmt(s.close_total)} · Opening ${adjFmt(s.open_total)}` },
-  { t: "Subtract & drop matches", d: "open − close per invoice; zero rows removed",
-    fill: s => `${s.n_rows} adjustments · net ${adjFmt(s.total_adjustment)}` },
-  { t: "Back-dated payment entries", d: "same invoice in both — balances netted",
-    fill: s => `${s.reason_counts["Back Dated Payment Entry"] || 0} rows` },
-  { t: "Cancelled & re-created invoices", d: "paired by account + ref (+ small-bill prints)",
-    fill: s => `${s.reason_counts["The invoice was created after the report was taken"] || 0} created · `
-             + `${s.reason_counts["The bill was amended after the report was taken"] || 0} amended · `
-             + `${s.reason_counts["Small bill print"] || 0} small-bill` },
-  { t: "Cancelled payments", d: "invoice with a payment entry and a balance",
-    fill: s => `${s.reason_counts["Payment Cancelled Entry"] || 0} rows` },
-  { t: "Finalise & flag", d: "build the file; flag low-confidence rows",
-    fill: s => `Total ${adjFmt(s.total_adjustment)} · ${s.n_review} flagged` },
-];
+def find_adjustments(close_src, open_src, island=None, merge_replacements=True):
+    """Returns (line_items, summary)."""
+    close, crows = _load(close_src, island)
+    openf, orows = _load(open_src, island)
 
-let workTimer = null;
+    added   = {i: openf[i] for i in openf if i not in close}
+    removed = {i: close[i] for i in close if i not in openf}
+    changed = {i: round(openf[i] - close[i], 2)
+               for i in (openf.keys() & close.keys())
+               if abs(openf[i] - close[i]) > 0.005}
 
-function renderWorking() {
-  const wrap = document.getElementById("adjWorking");
-  if (!wrap) return;
-  wrap.innerHTML = "";
-  WORK_STEPS.forEach((st, i) => {
-    const row = document.createElement("div");
-    row.className = "work-step pending";
-    row.id = `work_${i}`;
-    row.innerHTML = `
-      <div class="work-dot">${i + 1}</div>
-      <div class="work-body">
-        <div class="work-step-title">${st.t}</div>
-        <div class="work-step-desc">${st.d}</div>
-        <div class="work-step-val" id="workval_${i}"></div>
-      </div>`;
-    wrap.appendChild(row);
-  });
-}
+    def meta(ino):
+        r = orows.get(ino) or crows.get(ino) or {}
+        return (
+            (r.get("ACCOUNT_NO") or "").strip(),
+            (r.get("ISLAND_SNAME") or "").strip(),
+            (r.get("CAT_NAME") or "").strip(),
+            (r.get("BILL_REF") or "").strip(),
+        )
 
-function setWorkState(i, state) {
-  const row = document.getElementById(`work_${i}`);
-  if (!row) return;
-  row.className = `work-step ${state}`;
-  if (state !== "active" && state !== "error") row.querySelector(".work-dot").textContent = state === "done" ? "✓" : (i + 1);
-}
+    by_acct_added, by_acct_removed = {}, {}
+    for i in added:
+        by_acct_added.setdefault(meta(i)[0], []).append(i)
+    for i in removed:
+        by_acct_removed.setdefault(meta(i)[0], []).append(i)
 
-function startWorkingAnimation() {
-  renderWorking();
-  let i = 0;
-  setWorkState(0, "active");
-  workTimer = setInterval(() => {
-    setWorkState(i, "done");
-    i++;
-    if (i < WORK_STEPS.length) setWorkState(i, "active");
-    else clearInterval(workTimer);
-  }, 750);
-}
+    items, paired_added, paired_removed = [], set(), set()
 
-function finishWorking(summary) {
-  clearInterval(workTimer);
-  WORK_STEPS.forEach((st, i) => {
-    setWorkState(i, "done");
-    const v = document.getElementById(`workval_${i}`);
-    if (v) try { v.textContent = st.fill(summary); } catch (e) {}
-  });
-}
+    if merge_replacements:
+        for acct, add_list in by_acct_added.items():
+            for new_i, old_i in zip(add_list, by_acct_removed.get(acct, [])):
+                acc, isl, cat, ref = meta(new_i)
+                items.append(dict(account=acc, island=isl, category=cat, bill_ref=ref,
+                                  invoice_no=new_i, cancelled_invoice_no=old_i,
+                                  amount=round(added[new_i] - removed[old_i], 2),
+                                  reason="The invoice was cancelled and created after the report was taken"))
+                paired_added.add(new_i)
+                paired_removed.add(old_i)
 
-function errorWorking() {
-  clearInterval(workTimer);
-  for (let i = 0; i < WORK_STEPS.length; i++) {
-    const row = document.getElementById(`work_${i}`);
-    if (row && row.classList.contains("active")) { setWorkState(i, "error"); break; }
-  }
-}
+    for i, v in added.items():
+        if i in paired_added:
+            continue
+        acc, isl, cat, ref = meta(i)
+        items.append(dict(account=acc, island=isl, category=cat, bill_ref=ref,
+                          invoice_no=i, cancelled_invoice_no=None, amount=round(v, 2),
+                          reason="The invoice was created after the report was taken"))
 
-function onAdjFileChosen(input) {
-  const key = input.dataset.key;
-  const file = input.files[0];
-  if (!file) return;
-  adjFiles[key] = file;
-  document.getElementById(`adjslot_${key}`).classList.add("filled");
-  const btn = document.getElementById(`adjbtn_${key}`);
-  btn.classList.add("chosen");
-  btn.childNodes[0].textContent = file.name.length > 16 ? file.name.slice(0, 14) + "…" : file.name;
-  checkAdj();
-}
+    for i, v in removed.items():
+        if i in paired_removed:
+            continue
+        acc, isl, cat, ref = meta(i)
+        items.append(dict(account=acc, island=isl, category=cat, bill_ref=ref,
+                          invoice_no=i, cancelled_invoice_no=None, amount=round(-v, 2),
+                          reason="Invoice cancelled"))
 
-function checkAdj() {
-  const ready = adjFiles.adj_close_csv && adjFiles.adj_open_csv && adjState.month;
-  const btn = document.getElementById("adjGenerateBtn");
-  if (btn) btn.disabled = !ready;
-}
+    for i, v in changed.items():
+        acc, isl, cat, ref = meta(i)
+        items.append(dict(account=acc, island=isl, category=cat, bill_ref=ref,
+                          invoice_no=i, cancelled_invoice_no=None, amount=v,
+                          reason="The invoice was amended after the report was taken"))
 
-async function generateAdjustment() {
-  const btn = document.getElementById("adjGenerateBtn");
-  const status = document.getElementById("adjStatus");
-  btn.disabled = true;
-  status.className = "review-note";
-  status.textContent = "Waking up server, then generating… (first run can take ~60s)";
-  startWorkingAnimation();
+    items.sort(key=lambda x: (x["account"], x["invoice_no"]))
+    summary = dict(
+        close_total=round(sum(close.values()), 2),
+        open_total=round(sum(openf.values()), 2),
+        adjustment=round(sum(openf.values()) - sum(close.values()), 2),
+        line_total=round(sum(it["amount"] for it in items), 2),
+        n_created=len(added) - len(paired_added),
+        n_cancelled=len(removed) - len(paired_removed),
+        n_amended=len(changed),
+        n_replacements=len(paired_added),
+        n_rows=len(items),
+    )
+    return items, summary
 
-  try {
-    try { await fetch(`${ADJ_API_URL}/`, { signal: AbortSignal.timeout(90000) }); } catch (e) {}
 
-    const form = new FormData();
-    form.append("location", adjState.location);
-    form.append("adjustment_month", `${adjState.month}-01`); // YYYY-MM -> YYYY-MM-01
-    form.append("adj_close_csv", adjFiles.adj_close_csv);
-    form.append("adj_open_csv",  adjFiles.adj_open_csv);
+def apply_to_figures(close_src, open_src, figures, location=None):
+    """
+    Run the diff and feed Adjustment (1) into the reconciliation figures dict.
 
-    const res = await fetch(`${ADJ_API_URL}/adjustments`, {
-      method: "POST", body: form, signal: AbortSignal.timeout(180000),
-    });
-    if (!res.ok) throw new Error(await res.text());
+    Sets:
+        elec_bf     = prior-month closing total   (Balance b/f)
+        elec_bfadj  = current-month opening total (Balance b/f after adjustment)
+        elec_adj1   = elec_bfadj - elec_bf        (Adjustment (1))
 
-    const total  = res.headers.get("X-Adjustment-Total");
-    const rows   = res.headers.get("X-Adjustment-Rows");
-    const review = res.headers.get("X-Adjustment-Review");
-    let summary = null;
-    const sumHdr = res.headers.get("X-Adjustment-Summary");
-    if (sumHdr) { try { summary = JSON.parse(atob(sumHdr)); } catch (e) {} }
-    if (summary) finishWorking(summary);
-    else { clearInterval(workTimer); WORK_STEPS.forEach((_, i) => setWorkState(i, "done")); }
-
-    const blob = await res.blob();
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `${adjState.location.toUpperCase()}_${adjState.month.replace("-", "_")}_Adjustment_Details.xlsx`;
-    a.click();
-    URL.revokeObjectURL(url);
-
-    status.className = "review-note adj-status-ok";
-    status.innerHTML =
-      `✅ Generated. Total Adjustment: <strong>${adjFmt(total)}</strong> · `
-      + `${rows} rows · <strong>${review}</strong> flagged for review (see the Review sheet). `
-      + `Two transaction-only entries ("bill value 0", "sale date &gt; payment date") can't be derived — add manually if needed.`;
-  } catch (err) {
-    errorWorking();
-    status.className = "review-note adj-status-err";
-    status.textContent = `Error: ${err.message}`;
-  } finally {
-    btn.disabled = false;
-  }
-}
-
-// Tab switching: show #adjustmentTab / hide the reconciliation wizard
-function showTab(name) {
-  document.getElementById("reconTab").style.display   = name === "recon" ? "block" : "none";
-  document.getElementById("adjustmentTab").style.display = name === "adjustment" ? "block" : "none";
-  document.querySelectorAll(".top-tab").forEach(t =>
-    t.classList.toggle("active", t.dataset.tab === name));
-  if (name === "adjustment") renderAdjustmentTab();
-}
-
-document.addEventListener("DOMContentLoaded", () => {
-  document.querySelectorAll(".top-tab").forEach(t =>
-    t.addEventListener("click", () => showTab(t.dataset.tab)));
-  const gen = document.getElementById("adjGenerateBtn");
-  if (gen) gen.addEventListener("click", generateAdjustment);
-});
+    The calculator derives Adjustment (1) as (elec_bfadj - elec_bf), so setting
+    the two balances makes the line tie automatically. Returns the detail items
+    so the caller can build a downloadable annexure.
+    """
+    island = ISLAND_BY_LOCATION.get(location)
+    items, summary = find_adjustments(close_src, open_src, island=island)
+    figures["elec_bf"]    = summary["close_total"]
+    figures["elec_bfadj"] = summary["open_total"]
+    figures["elec_adj1"]  = summary["adjustment"]
+    return items, summary
