@@ -7,6 +7,8 @@ from parser.hulhumale import parse_hulhumale
 from parser.thilafushi import parse_thilafushi
 from parser.gulhi_falhu import parse_gulhi_falhu
 from parser.adjustments import find_adjustments, ISLAND_BY_LOCATION
+from reconciliation.adjustment_generator import identify, write_xlsx
+from datetime import datetime, date
 from reconciliation.calculator import calculate
 from reconciliation.generator import generate_docx
 app = FastAPI(title="STELCO Debtors Reconciliation API")
@@ -104,26 +106,42 @@ async def generate_report(
 @app.post("/adjustments")
 async def adjustments(
     location: str = Form(...),
-    report_date: str = Form(None),
-    recon_report:  UploadFile = File(None),   # current reconciliation report (.docx/.pdf) — for the annexure
+    adjustment_month: str = Form(...),        # any date in the adjustment month, e.g. "2026-03-01"
     adj_close_csv: UploadFile = File(...),     # previous month CLOSING debtors export (.csv)
     adj_open_csv:  UploadFile = File(...),     # current month OPENING debtors export (.csv)
 ):
     if location not in ISLAND_BY_LOCATION:
         raise HTTPException(400, f"Unknown location: {location}")
     try:
-        close_bytes = await adj_close_csv.read()
-        open_bytes  = await adj_open_csv.read()
-        items, summary = find_adjustments(
-            io.BytesIO(close_bytes),
-            io.BytesIO(open_bytes),
-            island=ISLAND_BY_LOCATION[location],
+        month = datetime.fromisoformat(adjustment_month).date()
+    except Exception:
+        raise HTTPException(400, "adjustment_month must be ISO date, e.g. 2026-03-01")
+    try:
+        tmp_dir = tempfile.mkdtemp()
+        close_path = os.path.join(tmp_dir, "close.csv")
+        open_path  = os.path.join(tmp_dir, "open.csv")
+        with open(close_path, "wb") as f:
+            f.write(await adj_close_csv.read())
+        with open(open_path, "wb") as f:
+            f.write(await adj_open_csv.read())
+
+        cutoff = datetime(month.year, month.month, 1)
+        items, summary = identify(close_path, open_path, location=location, report_cutoff=cutoff)
+
+        out_path = os.path.join(
+            tmp_dir,
+            f"{location.upper()}_{month.strftime('%Y_%m')}_Adjustment_Details.xlsx"
         )
-        return {
-            "location": location,
-            "report_date": report_date,
-            "summary": summary,     # close_total, open_total, adjustment, counts...
-            "detail": items,        # invoice-level rows
-        }
+        write_xlsx(items, summary, location, month, out_path)
+        return FileResponse(
+            out_path,
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            filename=os.path.basename(out_path),
+            headers={"X-Adjustment-Total": str(summary["total_adjustment"]),
+                     "X-Adjustment-Rows": str(summary["n_rows"]),
+                     "X-Adjustment-Review": str(summary["n_review"])},
+        )
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(500, f"Adjustment error: {str(e)}")
