@@ -8,14 +8,16 @@
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="css/style.css">
 <style>
-  /* Top tab bar (Reconciliation / Adjustment) */
-  .top-tabs { display:flex; gap:8px; padding:12px 24px; background:#fff;
-              border-bottom:1px solid #e2e8f0; }
+  /* Top tab bar (Reconciliation / Adjustment) — fixed below the 60px header */
+  .top-tabs { display:flex !important; gap:8px; padding:12px 24px; background:#fff;
+              border-bottom:1px solid #e2e8f0; position:fixed; top:60px; left:0; right:0; z-index:101; }
   .top-tab { padding:8px 18px; border:none; background:transparent; cursor:pointer;
              font-family:inherit; font-weight:600; font-size:14px; color:#64748b;
              border-radius:8px; transition:background .15s, color .15s; }
   .top-tab:hover { background:#f1f5f9; }
   .top-tab.active { background:#0f172a; color:#fff; }
+  /* push content below the fixed tab bar */
+  .app-body { padding-top:58px; }
   .adj-status-ok { color:#047857; }
   .adj-status-err { color:#b91c1c; }
 
