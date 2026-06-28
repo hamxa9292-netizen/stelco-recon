@@ -24,25 +24,33 @@
   /* Adjustment tab two-column layout */
   .adj-layout { display:flex; gap:28px; align-items:flex-start; flex-wrap:wrap; }
   .adj-left { flex:1 1 480px; min-width:320px; }
-  .adj-right { flex:0 0 340px; width:340px; background:#fff; border:1px solid #e2e8f0;
-               border-radius:14px; padding:18px 18px 8px; }
-  .work-title { font-weight:700; font-size:14px; color:#0f172a; margin-bottom:14px; }
+  .adj-right { flex:0 0 340px; width:340px; background:#060c08; border:1px solid #123a22;
+               border-radius:14px; padding:18px 18px 8px; position:relative; overflow:hidden;
+               min-height:380px; box-shadow:0 0 26px rgba(0,255,65,.10); }
+  #matrixCanvas { position:absolute; inset:0; width:100%; height:100%; z-index:0; opacity:.5; }
+  .adj-right > .work-title, .adj-right > .work-steps { position:relative; z-index:1; }
+  .work-title { font-weight:700; font-size:14px; color:#39ff14; margin-bottom:14px;
+                letter-spacing:.5px; text-shadow:0 0 8px rgba(57,255,20,.5);
+                font-family:'Courier New', monospace; }
   .work-steps { position:relative; }
   .work-step { display:flex; gap:12px; padding-bottom:18px; position:relative; }
   .work-step:not(:last-child)::before { content:""; position:absolute; left:13px; top:26px;
-              bottom:0; width:2px; background:#e2e8f0; }
-  .work-step.done:not(:last-child)::before { background:#34d399; }
+              bottom:0; width:2px; background:#143821; }
+  .work-step.done:not(:last-child)::before { background:#00ff41; box-shadow:0 0 6px #00ff41; }
   .work-dot { flex:0 0 26px; width:26px; height:26px; border-radius:50%; display:flex;
               align-items:center; justify-content:center; font-size:12px; font-weight:700;
-              background:#e2e8f0; color:#64748b; z-index:1; transition:.25s; }
-  .work-step.active .work-dot { background:#f59e0b; color:#fff; box-shadow:0 0 0 4px #fde68a; }
-  .work-step.done .work-dot { background:#10b981; color:#fff; }
-  .work-step.error .work-dot { background:#ef4444; color:#fff; }
+              background:#0c1a11; color:#3a7a4a; border:1px solid #1d4d2e; z-index:1; transition:.25s; }
+  .work-step.active .work-dot { background:#f59e0b; color:#0a0a0a; border-color:#f59e0b;
+              box-shadow:0 0 0 4px rgba(245,158,11,.3), 0 0 14px #f59e0b; }
+  .work-step.done .work-dot { background:#00ff41; color:#06120a; border-color:#00ff41;
+              box-shadow:0 0 10px rgba(0,255,65,.6); }
+  .work-step.error .work-dot { background:#ef4444; color:#fff; border-color:#ef4444; }
   .work-body { flex:1; }
-  .work-step-title { font-size:13px; font-weight:600; color:#0f172a; }
-  .work-step-desc { font-size:12px; color:#94a3b8; margin-top:2px; }
-  .work-step-val { font-size:12px; font-weight:600; color:#2563eb; margin-top:4px; min-height:1px; }
-  .work-step.pending .work-step-title { color:#94a3b8; }
+  .work-step-title { font-size:13px; font-weight:600; color:#d6ffe0; }
+  .work-step-desc { font-size:12px; color:#5c8c68; margin-top:2px; }
+  .work-step-val { font-size:12px; font-weight:700; color:#39ff14; margin-top:4px; min-height:1px;
+                   font-family:'Courier New', monospace; text-shadow:0 0 6px rgba(57,255,20,.45); }
+  .work-step.pending .work-step-title { color:#5c8c68; }
   @media (max-width:900px){ .adj-right{ flex-basis:100%; width:100%; } }
 </style>
 </head>
@@ -302,7 +310,8 @@
           </div>
 
           <aside class="adj-right">
-            <div class="work-title">How the adjustment is found</div>
+            <canvas id="matrixCanvas"></canvas>
+            <div class="work-title">▚ HOW THE ADJUSTMENT IS FOUND</div>
             <div class="work-steps" id="adjWorking"></div>
           </aside>
         </div>
