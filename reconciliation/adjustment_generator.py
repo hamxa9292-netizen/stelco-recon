@@ -37,12 +37,17 @@ ISLAND_BY_LOCATION = {
     "thilafushi": "THILAFUSHI", "gulhi_falhu": "GULHI FALHU",
 }
 
-SALES_REASONS   = {"The invoice was created after the report was taken",
-                   "The bill was amended after the report was taken",
-                   "Small bill print"}
-PAYMENT_REASONS = {"Back Dated Payment Entry", "Payment Cancelled Entry"}
+# Reason wording — edit these in one place to match your house style.
+R_CREATED   = "Bill printed after the report was generated"
+R_AMENDED   = "The bill was amended after the report was taken"
+R_SMALL     = "Small Bill"
+R_BACKPAY   = "Back dated payment entry"
+R_PAYCANCEL = "Payment Cancelled Entry"
 
-SMALL_BILL = 50.0   # |amount| below this on a close-only removal -> "Small bill print"
+SALES_REASONS   = {R_CREATED, R_AMENDED, R_SMALL}
+PAYMENT_REASONS = {R_BACKPAY, R_PAYCANCEL}
+
+SMALL_BILL = 50.0   # |amount| below this on a close-only removal -> small bill
 
 
 def _date(v):
@@ -105,30 +110,29 @@ def identify(close_src, open_src, location, report_cutoff=None):
         cb = c["bal"] if c else 0.0
         ob = o["bal"] if o else 0.0
         amt = round(ob - cb, 2)
-        cbill = c["bill"] if c else 0.0
-        obill = o["bill"] if o else 0.0
-        bd = (o or c or {}).get("bill_date")
-        new_bill = report_cutoff is not None and bd is not None and bd >= report_cutoff
-        if c and o:                                   # in both
-            if abs(obill - cbill) > 0.005:
-                reason = "The bill was amended after the report was taken"
+        if c and o:                                   # in both files
+            dbill = o["bill"] - c["bill"]
+            dfine = o["fine"] - c["fine"]
+            # a bill change that equals a fine reversal is payment-side, not an amendment
+            if abs(dbill) > 0.005 and abs(dbill - dfine) >= 0.01:
+                reason = R_AMENDED
             else:
-                reason = "Back Dated Payment Entry"
+                reason = R_BACKPAY
         elif o and not c:                             # open-only (positive)
-            reason = ("The invoice was created after the report was taken"
-                      if new_bill else "Payment Cancelled Entry")
+            # payment cancelled: invoice carries a payment AND a balance; else a new bill
+            if o["pay"] > 0.005 and o["bal"] > 0.005:
+                reason = R_PAYCANCEL
+            else:
+                reason = R_CREATED
         else:                                         # close-only (negative)
             if abs(amt) < SMALL_BILL:
-                reason = "Small bill print"
-            elif new_bill:
-                reason = "The invoice was created after the report was taken"
+                reason = R_SMALL
             else:
-                reason = "Back Dated Payment Entry"
+                reason = R_BACKPAY
         # low-confidence flags: cases the snapshots can't fully disambiguate
         review, note = False, ""
-        if (not c) and o and report_cutoff is not None and bd is not None \
-                and abs((bd - report_cutoff).days) <= 10:
-            review, note = True, "Open-only near cutoff: created vs payment-cancelled"
+        if (not c) and o and o["pay"] <= 0.005:
+            review, note = True, "Open-only, no payment: created vs payment-cancelled (verify)"
         if c and (not o) and 20.0 <= abs(amt) <= 125.0:
             review, note = True, "Close-only near threshold: small-bill vs back-dated-payment"
         meta = (o or c)
