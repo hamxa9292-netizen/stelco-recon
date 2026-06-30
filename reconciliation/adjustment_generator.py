@@ -98,12 +98,29 @@ def _load(src, island=None):
     return d
 
 
-def identify(close_src, open_src, location, report_cutoff=None):
+def identify(close_src, open_src, location=None, report_cutoff=None):
     """Return (items, summary). Each item: account, island, category, lob,
-    invoice_no, cancelled_invoice_no, bill_ref, amount, reason, section."""
-    island = ISLAND_BY_LOCATION.get(location)
+    invoice_no, cancelled_invoice_no, bill_ref, amount, reason, section.
+
+    location is OPTIONAL. When given, rows are filtered to that island. When
+    omitted, the island is auto-detected from the CSV's ISLAND_SNAME column
+    (each export is a single island). If the two CSVs resolve to different
+    islands, that's almost certainly a mismatched pair, so we stop.
+    """
+    island = ISLAND_BY_LOCATION.get(location) if location else None
     close = _load(close_src, island)
     openf = _load(open_src, island)
+
+    # Auto-detect island(s) actually present in the data.
+    close_isl = {v["island"] for v in close.values() if v["island"]}
+    open_isl  = {v["island"] for v in openf.values() if v["island"]}
+    if close_isl and open_isl and close_isl != open_isl:
+        raise ValueError(
+            f"Closing CSV island {sorted(close_isl)} does not match opening CSV "
+            f"island {sorted(open_isl)}. Check you paired the right two files."
+        )
+    detected = sorted(close_isl | open_isl)
+    detected_island = (island or (detected[0] if detected else "") or "")
 
     def classify(ino):
         c, o = close.get(ino), openf.get(ino)
@@ -161,6 +178,7 @@ def identify(close_src, open_src, location, report_cutoff=None):
         n_review=sum(1 for it in items if it.get("review")),
         n_rows=len(items),
         reason_counts=rc,
+        island=detected_island,
     )
     return items, summary
 
@@ -168,7 +186,11 @@ def identify(close_src, open_src, location, report_cutoff=None):
 def write_xlsx(items, summary, location, adjustment_month, out_path):
     """adjustment_month: a date in the adjustment month (e.g. date(2026,3,1))."""
     F = "Arial"
-    island = ISLAND_BY_LOCATION.get(location, location.upper())
+    # Prefer the island auto-detected from the data; fall back to the location map.
+    island = (summary.get("island")
+              or ISLAND_BY_LOCATION.get(location)
+              or (location or "").upper()
+              or "ALL")
     month_first = date(adjustment_month.year, adjustment_month.month, 1)
     month_last = date(adjustment_month.year, adjustment_month.month,
                       monthrange(adjustment_month.year, adjustment_month.month)[1])
