@@ -96,6 +96,60 @@ const parseNum = (s) => {
   return parseFloat(String(s).replace(/[^0-9.-]/g, "")) || 0;
 };
 
+// ── Reconciliation snapshot (live statement preview) ───────────
+// Mirrors reconciliation/calculator.py row math for the right-side preview.
+function computeRecon(f) {
+  f = f || {};
+  const g = k => parseNum(f[k]);
+  const has = k => f[k] !== undefined && f[k] !== null && f[k] !== "";
+  const e_bf = g("elec_bf"), m_bf = g("misc_bf");
+  const e_bfadj = has("elec_bfadj") ? g("elec_bfadj") : e_bf;
+  const m_bfadj = has("misc_bfadj") ? g("misc_bfadj") : m_bf;
+  const e_sales = g("elec_sales"), m_sales = g("misc_sales");
+  const e_cr = g("elec_credits"), m_cr = g("misc_credits");
+  const e_disc = g("elec_discount"), m_disc = g("misc_discount");
+  const e_coll = g("elec_collection"), m_coll = g("misc_collection");
+  const e_cf = g("elec_close_system"), m_cf = g("misc_close_system");
+  const e_sub1 = e_bfadj + e_sales, m_sub1 = m_bfadj + m_sales;
+  const e_sub2 = e_sub1 + e_cr + e_disc, m_sub2 = m_sub1 + m_cr + m_disc;
+  const e_adj2 = e_cf - (e_sub2 - e_coll), m_adj2 = m_cf - (m_sub2 - m_coll);
+  return [
+    { label: "Balance b/f",            e: e_bf,    m: m_bf },
+    { label: "Adjustments (1)",        e: e_bfadj - e_bf, m: m_bfadj - m_bf },
+    { label: "Balance b/f (adj.)",     e: e_bfadj, m: m_bfadj, bold: true },
+    { label: "Total Sales",            e: e_sales, m: m_sales },
+    { label: "",                       e: e_sub1,  m: m_sub1, sub: true },
+    { label: "Credits / Fine",         e: e_cr,    m: m_cr },
+    { label: "Discount",               e: e_disc,  m: m_disc },
+    { label: "",                       e: e_sub2,  m: m_sub2, sub: true },
+    { label: "Collection",             e: -e_coll, m: -m_coll },
+    { label: "Adjustments (2)",        e: e_adj2,  m: m_adj2 },
+    { label: "Debtors Balance c/f",    e: e_cf,    m: m_cf, final: true },
+  ];
+}
+
+function renderSnapshot() {
+  const el = document.getElementById("reconSnapshot");
+  if (!el) return;
+  const hasFigures = state.figures && Object.keys(state.figures).length > 0;
+  const rows = computeRecon(state.figures);
+  const monthStr = state.month
+    ? new Date(state.month + "-01").toLocaleString("en-US", { month: "long", year: "numeric" })
+    : "—";
+  const loc = LOCATION_NAMES[state.location] || "—";
+  let html = `<div class="snap-head"><span>${loc}</span><span>${monthStr}</span></div>`;
+  html += `<table class="snap-table"><thead><tr><th></th><th>Elec.</th><th>MISC</th></tr></thead><tbody>`;
+  for (const r of rows) {
+    const cls = `${r.bold ? "snap-bold " : ""}${r.sub ? "snap-sub " : ""}${r.final ? "snap-final " : ""}`.trim();
+    const ev = hasFigures ? fmt(r.e) : "—";
+    const mv = hasFigures ? fmt(r.m) : "—";
+    html += `<tr class="${cls}"><td>${r.label}</td><td>${ev}</td><td>${mv}</td></tr>`;
+  }
+  html += `</tbody></table>`;
+  if (!hasFigures) html += `<div class="snap-hint">Preview — fills in after Parse Files</div>`;
+  el.innerHTML = html;
+}
+
 // ── Step navigation ────────────────────────────────────────────
 function goToStep(n) {
   state.step = n;
@@ -141,6 +195,7 @@ function checkStep1() {
 document.getElementById("step1Next").addEventListener("click", () => {
   renderUploadSlots();
   document.getElementById("locationLabel").textContent = LOCATION_NAMES[state.location];
+  renderSnapshot();
   goToStep(2);
 });
 
@@ -238,6 +293,7 @@ async function startParsing() {
   }
 
   renderReviewTable();
+  renderSnapshot();
   document.getElementById("parsingStatus").style.display = "none";
   document.getElementById("reviewWrap").style.display = "block";
   document.getElementById("step3Next").style.display = "inline-block";
@@ -278,6 +334,7 @@ function renderReviewTable() {
     input.addEventListener("change", () => {
       state.figures[input.dataset.key] = parseNum(input.value);
       input.classList.remove("needs-input");
+      renderSnapshot();
     });
   });
 }
