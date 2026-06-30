@@ -35,12 +35,13 @@ async def parse_files(
     open_pdf:       UploadFile = File(...),
     close_pdf:      UploadFile = File(...),
     sales_pdf:      UploadFile = File(...),
-    misc_open_pdf:  UploadFile = File(...),
-    misc_close_pdf: UploadFile = File(...),
+    misc_open_pdf:  UploadFile = File(None),
+    misc_close_pdf: UploadFile = File(None),
     misc_sales_pdf: UploadFile = File(None),
     recon_pdf:      UploadFile = File(...),
     collection_pdf: UploadFile = File(...),
     cash_collection_pdf: UploadFile = File(None),   # Hulhumale' only
+    billing_pdf:    UploadFile = File(None),        # Hulhumale' only
 ):
     """
     Step 1 — Parse all uploaded PDFs and return extracted figures for review.
@@ -59,6 +60,7 @@ async def parse_files(
         "recon":           recon_pdf,
         "collection":      collection_pdf,
         "cash_collection": cash_collection_pdf,
+        "billing":         billing_pdf,
     }
     tmp_dir = tempfile.mkdtemp()
     for key, upload in uploads.items():
