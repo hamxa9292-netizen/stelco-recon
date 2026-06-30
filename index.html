@@ -210,22 +210,13 @@
           <p class="panel-desc">Upload the required reports for <strong id="locationLabel">—</strong>. All files printed from the billing system.</p>
         </div>
 
-        <div class="recon-layout">
-          <div class="recon-left">
-            <div class="upload-grid" id="uploadGrid">
-              <!-- Populated by JS based on location -->
-            </div>
+        <div class="upload-grid" id="uploadGrid">
+          <!-- Populated by JS based on location -->
+        </div>
 
-            <div class="panel-actions">
-              <button class="btn-secondary" onclick="goToStep(1)">← Back</button>
-              <button class="btn-primary" id="step2Next" disabled>Parse Files →</button>
-            </div>
-          </div>
-
-          <aside class="recon-right">
-            <div class="snap-title">▦ RECONCILIATION SNAPSHOT</div>
-            <div id="reconSnapshot"></div>
-          </aside>
+        <div class="panel-actions">
+          <button class="btn-secondary" onclick="goToStep(1)">← Back</button>
+          <button class="btn-primary" id="step2Next" disabled>Parse Files →</button>
         </div>
       </section>
 
@@ -268,25 +259,34 @@
           <p class="panel-desc">Review the summary below then download your reconciliation statement.</p>
         </div>
 
-        <div class="summary-card" id="summaryCard">
-          <div class="summary-header">
-            <span id="summaryLocation">—</span>
-            <span class="summary-badge" id="summaryMonth">—</span>
+        <div class="recon-layout">
+          <div class="recon-left">
+            <div class="summary-card" id="summaryCard">
+              <div class="summary-header">
+                <span id="summaryLocation">—</span>
+                <span class="summary-badge" id="summaryMonth">—</span>
+              </div>
+              <div class="summary-grid" id="summaryGrid"></div>
+            </div>
+
+            <div class="generate-actions">
+              <button class="btn-secondary" onclick="goToStep(3)">← Back</button>
+              <button class="btn-generate" id="generateBtn" onclick="generateReport()">
+                <span id="generateBtnText">⬇ Download .docx Report</span>
+              </button>
+            </div>
+
+            <div class="success-msg" id="successMsg" style="display:none">
+              ✅ Report generated successfully! Check your downloads.
+            </div>
+            <div class="error-msg" id="errorMsg" style="display:none"></div>
           </div>
-          <div class="summary-grid" id="summaryGrid"></div>
-        </div>
 
-        <div class="generate-actions">
-          <button class="btn-secondary" onclick="goToStep(3)">← Back</button>
-          <button class="btn-generate" id="generateBtn" onclick="generateReport()">
-            <span id="generateBtnText">⬇ Download .docx Report</span>
-          </button>
+          <aside class="recon-right">
+            <div class="snap-title">▦ RECONCILIATION SNAPSHOT</div>
+            <div id="reconSnapshot"></div>
+          </aside>
         </div>
-
-        <div class="success-msg" id="successMsg" style="display:none">
-          ✅ Report generated successfully! Check your downloads.
-        </div>
-        <div class="error-msg" id="errorMsg" style="display:none"></div>
       </section>
 
     </main>
