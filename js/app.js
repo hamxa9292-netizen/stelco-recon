@@ -166,7 +166,7 @@ function goToStep(n) {
   window.scrollTo(0, 0);
 
   if (n === 3) startParsing();
-  if (n === 4) renderSummary();
+  if (n === 4) { renderSummary(); renderSnapshot(); }
 }
 
 // ── STEP 1 ─────────────────────────────────────────────────────
@@ -195,7 +195,6 @@ function checkStep1() {
 document.getElementById("step1Next").addEventListener("click", () => {
   renderUploadSlots();
   document.getElementById("locationLabel").textContent = LOCATION_NAMES[state.location];
-  renderSnapshot();
   goToStep(2);
 });
 
