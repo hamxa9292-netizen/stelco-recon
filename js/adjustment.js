@@ -15,7 +15,7 @@ const ADJ_SLOTS = [
 ];
 
 const adjFiles = {};
-const adjState = { location: "male", month: null };
+const adjState = { location: "", month: null };
 
 function renderAdjustmentTab() {
   const grid = document.getElementById("adjUploadGrid");
@@ -42,11 +42,54 @@ function renderAdjustmentTab() {
   });
 
   renderWorking();
+  startMatrix();
 
   const loc = document.getElementById("adjLocation");
   if (loc) loc.addEventListener("change", e => { adjState.location = e.target.value; checkAdj(); });
   const mon = document.getElementById("adjMonth");
   if (mon) mon.addEventListener("change", e => { adjState.month = e.target.value; checkAdj(); });
+}
+
+// ── Matrix digital-rain backdrop for the working panel ─────────
+const _mx = { raf: null, drops: [], bound: false };
+function startMatrix() {
+  const canvas = document.getElementById("matrixCanvas");
+  if (!canvas) return;
+  const ctx = canvas.getContext("2d");
+  const glyphs = "01∑Δ◇▷ﾊﾐﾋｰｳｼﾅﾓﾆｻﾜｵﾘ0123456789ABCDEF$£".split("");
+  const fontSize = 14;
+
+  function sizeAndSeed() {
+    const panel = canvas.parentElement;
+    canvas.width = panel.clientWidth;
+    canvas.height = panel.clientHeight || 380;
+    const cols = Math.max(1, Math.floor(canvas.width / fontSize));
+    _mx.drops = Array(cols).fill(0).map(() => Math.random() * (canvas.height / fontSize));
+  }
+  sizeAndSeed();
+
+  if (!_mx.bound) {
+    window.addEventListener("resize", () => { if (document.getElementById("matrixCanvas")) startMatrix(); });
+    _mx.bound = true;
+  }
+
+  function draw() {
+    if (!document.body.contains(canvas)) return;       // stop if removed
+    ctx.fillStyle = "rgba(6,12,8,0.14)";               // fade trails
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.font = fontSize + "px 'Courier New', monospace";
+    for (let i = 0; i < _mx.drops.length; i++) {
+      const ch = glyphs[(Math.random() * glyphs.length) | 0];
+      const x = i * fontSize, y = _mx.drops[i] * fontSize;
+      ctx.fillStyle = Math.random() > 0.95 ? "#d6ffe0" : "#00ff41";  // bright leaders
+      ctx.fillText(ch, x, y);
+      if (y > canvas.height && Math.random() > 0.975) _mx.drops[i] = 0;
+      _mx.drops[i] += 0.5;
+    }
+    _mx.raf = requestAnimationFrame(draw);
+  }
+  if (_mx.raf) cancelAnimationFrame(_mx.raf);
+  draw();
 }
 
 // ── Step visualizer ────────────────────────────────────────────
@@ -158,7 +201,7 @@ async function generateAdjustment() {
     try { await fetch(`${ADJ_API_URL}/`, { signal: AbortSignal.timeout(90000) }); } catch (e) {}
 
     const form = new FormData();
-    form.append("location", adjState.location);
+    if (adjState.location) form.append("location", adjState.location);
     form.append("adjustment_month", `${adjState.month}-01`); // YYYY-MM -> YYYY-MM-01
     form.append("adj_close_csv", adjFiles.adj_close_csv);
     form.append("adj_open_csv",  adjFiles.adj_open_csv);
@@ -181,7 +224,9 @@ async function generateAdjustment() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `${adjState.location.toUpperCase()}_${adjState.month.replace("-", "_")}_Adjustment_Details.xlsx`;
+    const islandTag = ((summary && summary.island) || adjState.location || "ADJUSTMENT")
+      .toUpperCase().replace(/\s+/g, "_").replace(/'/g, "");
+    a.download = `${islandTag}_${adjState.month.replace("-", "_")}_Adjustment_Details.xlsx`;
     a.click();
     URL.revokeObjectURL(url);
 
