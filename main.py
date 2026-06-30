@@ -109,12 +109,12 @@ async def generate_report(
 # ──────────────────────────────────────────────────────────────────────
 @app.post("/adjustments")
 async def adjustments(
-    location: str = Form(...),
     adjustment_month: str = Form(...),        # any date in the adjustment month, e.g. "2026-03-01"
     adj_close_csv: UploadFile = File(...),     # previous month CLOSING debtors export (.csv)
     adj_open_csv:  UploadFile = File(...),     # current month OPENING debtors export (.csv)
+    location: str = Form(None),                # OPTIONAL — auto-detected from the CSV if omitted
 ):
-    if location not in ISLAND_BY_LOCATION:
+    if location and location not in ISLAND_BY_LOCATION:
         raise HTTPException(400, f"Unknown location: {location}")
     try:
         month = datetime.fromisoformat(adjustment_month).date()
@@ -130,11 +130,16 @@ async def adjustments(
             f.write(await adj_open_csv.read())
 
         cutoff = datetime(month.year, month.month, 1)
-        items, summary = identify(close_path, open_path, location=location, report_cutoff=cutoff)
+        try:
+            items, summary = identify(close_path, open_path, location=location, report_cutoff=cutoff)
+        except ValueError as e:
+            raise HTTPException(400, str(e))
 
+        # Island name (auto-detected) drives the output filename when no location was picked.
+        island_tag = (summary.get("island") or location or "ADJUSTMENT").upper().replace(" ", "_").replace("'", "")
         out_path = os.path.join(
             tmp_dir,
-            f"{location.upper()}_{month.strftime('%Y_%m')}_Adjustment_Details.xlsx"
+            f"{island_tag}_{month.strftime('%Y_%m')}_Adjustment_Details.xlsx"
         )
         write_xlsx(items, summary, location, month, out_path)
         import base64
