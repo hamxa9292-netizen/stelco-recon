@@ -25,6 +25,7 @@ PARSERS = {
     "hulhumale":  parse_hulhumale,
     "thilafushi": parse_thilafushi,
     "gulhi_falhu":parse_gulhi_falhu,
+    "other_islands": parse_thilafushi,   # same reports/formula as Thilafushi
 }
 @app.get("/")
 def root():
