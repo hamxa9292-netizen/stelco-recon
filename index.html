@@ -21,6 +21,26 @@
   .adj-status-ok { color:#047857; }
   .adj-status-err { color:#b91c1c; }
 
+  /* Reconciliation snapshot (right side of Upload Files step) */
+  .recon-layout { display:flex; gap:28px; align-items:flex-start; flex-wrap:wrap; }
+  .recon-left { flex:1 1 460px; min-width:300px; }
+  .recon-right { flex:0 0 320px; width:320px; background:#0f172a; color:#e2e8f0;
+                 border-radius:14px; padding:16px 16px 14px; position:sticky; top:120px; }
+  .snap-title { font-size:12px; font-weight:700; letter-spacing:.5px; color:#93c5fd;
+                margin-bottom:12px; font-family:'Courier New', monospace; }
+  .snap-head { display:flex; justify-content:space-between; font-size:12px; font-weight:600;
+               color:#cbd5e1; padding-bottom:8px; border-bottom:1px solid #334155; margin-bottom:6px; }
+  .snap-table { width:100%; border-collapse:collapse; font-size:11px; }
+  .snap-table th { text-align:right; color:#64748b; font-weight:600; padding:4px 4px 6px; }
+  .snap-table th:first-child { text-align:left; }
+  .snap-table td { padding:3px 4px; text-align:right; color:#e2e8f0; font-variant-numeric:tabular-nums; }
+  .snap-table td:first-child { text-align:left; color:#cbd5e1; }
+  .snap-sub td { border-top:1px solid #334155; color:#94a3b8; }
+  .snap-bold td { font-weight:700; }
+  .snap-final td { border-top:2px solid #475569; font-weight:700; color:#fff; padding-top:5px; }
+  .snap-hint { margin-top:12px; font-size:11px; color:#64748b; text-align:center; font-style:italic; }
+  @media (max-width:900px){ .recon-right{ flex-basis:100%; width:100%; position:static; } }
+
   /* Adjustment tab two-column layout */
   .adj-layout { display:flex; gap:28px; align-items:flex-start; flex-wrap:wrap; }
   .adj-left { flex:1 1 480px; min-width:320px; }
@@ -190,13 +210,22 @@
           <p class="panel-desc">Upload the required reports for <strong id="locationLabel">—</strong>. All files printed from the billing system.</p>
         </div>
 
-        <div class="upload-grid" id="uploadGrid">
-          <!-- Populated by JS based on location -->
-        </div>
+        <div class="recon-layout">
+          <div class="recon-left">
+            <div class="upload-grid" id="uploadGrid">
+              <!-- Populated by JS based on location -->
+            </div>
 
-        <div class="panel-actions">
-          <button class="btn-secondary" onclick="goToStep(1)">← Back</button>
-          <button class="btn-primary" id="step2Next" disabled>Parse Files →</button>
+            <div class="panel-actions">
+              <button class="btn-secondary" onclick="goToStep(1)">← Back</button>
+              <button class="btn-primary" id="step2Next" disabled>Parse Files →</button>
+            </div>
+          </div>
+
+          <aside class="recon-right">
+            <div class="snap-title">▦ RECONCILIATION SNAPSHOT</div>
+            <div id="reconSnapshot"></div>
+          </aside>
         </div>
       </section>
 
