@@ -61,20 +61,25 @@ def _collection_realised(path):
 
 
 def parse_thilafushi(files):
-    elec_bf           = _total(files["open"])  if files.get("open")  else 0.0
+    # open.pdf shows the b/f AFTER adjustment. The true Balance b/f is last
+    # month's signed closing c/f, entered manually in Review; Adjustments(1)
+    # is then computed as bfadj - bf on the front end.
+    elec_bfadj        = _total(files["open"])  if files.get("open")  else 0.0
     elec_close_system = _total(files["close"]) if files.get("close") else 0.0
     elec_sales        = _grand_total(files["sales"]) if files.get("sales") else 0.0
     elec_credits      = _credits_total(files["collection"]) if files.get("collection") else 0.0
     elec_collection   = _collection_realised(files["recon"]) if files.get("recon") else 0.0
 
     # MISC is optional at Thilafushi; parsed only if those files are uploaded.
-    misc_bf           = _total(files["misc_open"])  if files.get("misc_open")  else 0.0
+    misc_bfadj        = _total(files["misc_open"])  if files.get("misc_open")  else 0.0
     misc_close_system = _total(files["misc_close"]) if files.get("misc_close") else 0.0
     misc_sales        = _grand_total(files["misc_sales"]) if files.get("misc_sales") else 0.0
 
     return {
-        "elec_bf":           elec_bf,
-        "misc_bf":           misc_bf,
+        "elec_bf":           0.0,            # manual entry: prior month signed c/f
+        "misc_bf":           0.0,
+        "elec_bfadj":        elec_bfadj,     # from open.pdf (b/f after adjustment)
+        "misc_bfadj":        misc_bfadj,
         "elec_close_system": elec_close_system,
         "misc_close_system": misc_close_system,
         "elec_sales":        elec_sales,
