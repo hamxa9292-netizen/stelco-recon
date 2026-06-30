@@ -66,8 +66,8 @@ const LOCATION_NAMES = {
 
 // Review fields shown in step 3
 const REVIEW_FIELDS = [
-  { key: "elec_bf",           label: "Balance b/f (prior month c/f)",                               misc_key: "misc_bf"           },
-  { key: "elec_adj1",         label: "Adjustments (1)",                                              misc_key: "misc_adj1",  optional: true },
+  { key: "elec_bf",           label: "Balance b/f (prior month signed c/f — enter manually)",       misc_key: "misc_bf"           },
+  { key: "elec_bfadj",        label: "Balance b/f (after adjustment)",                               misc_key: "misc_bfadj"        },
   { key: "elec_sales",        label: "Total Sales/Additional Revenue",                               misc_key: "misc_sales"        },
   { key: "elec_credits",      label: "Credits / Fine",                                               misc_key: "misc_credits"      },
   { key: "elec_collection",   label: "Collection for the month",                                     misc_key: "misc_collection"   },
@@ -284,6 +284,10 @@ async function startParsing() {
     if (!res.ok) throw new Error(await res.text());
     const data = await res.json();
     state.figures = data.figures || {};
+    // Locations whose parser doesn't split b/f vs b/f-after-adjustment:
+    // default bfadj to bf so Adjustments(1) is 0 unless the user edits.
+    if (state.figures.elec_bfadj == null) state.figures.elec_bfadj = state.figures.elec_bf ?? 0;
+    if (state.figures.misc_bfadj == null) state.figures.misc_bfadj = state.figures.misc_bf ?? 0;
 
   } catch (err) {
     // If backend unreachable, use empty figures so user can still enter manually
