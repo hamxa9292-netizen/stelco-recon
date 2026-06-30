@@ -55,6 +55,16 @@ const FILE_SLOTS = {
     { key: "recon_pdf",      label: "Payment Reconciliation",  icon: "🧾", desc: "Payment Reconciliation Report Summary",required: true  },
     { key: "collection_pdf", label: "Credits Summary",         icon: "💳", desc: "Cash Collection Credits Summary",     required: true  },
   ],
+  other_islands: [
+    { key: "open_pdf",       label: "Opening Debtors Summary", icon: "📂", desc: "Debtors Summary As At [opening date]",  required: true  },
+    { key: "close_pdf",      label: "Closing Debtors Summary", icon: "📁", desc: "Debtors Summary As At [closing date]", required: true  },
+    { key: "sales_pdf",      label: "Sales Report",            icon: "📊", desc: "Sales Report for the month",           required: true  },
+    { key: "misc_open_pdf",  label: "MISC Opening Summary",    icon: "📂", desc: "MISC Bills Debtors Summary (opening)", required: false },
+    { key: "misc_close_pdf", label: "MISC Closing Summary",    icon: "📁", desc: "MISC Bills Debtors Summary (closing)", required: false },
+    { key: "misc_sales_pdf", label: "MISC Sales Report",       icon: "📊", desc: "MISC Bills Sales Report",             required: false },
+    { key: "recon_pdf",      label: "Payment Reconciliation",  icon: "🧾", desc: "Payment Reconciliation Report Summary",required: true  },
+    { key: "collection_pdf", label: "Credits Summary",         icon: "💳", desc: "Cash Collection Credits Summary",     required: true  },
+  ],
 };
 
 const LOCATION_NAMES = {
@@ -62,6 +72,7 @@ const LOCATION_NAMES = {
   hulhumale:   "Hulhumale'",
   thilafushi:  "Thilafushi",
   gulhi_falhu: "Gulhi Falhu",
+  other_islands: "Other Islands",
 };
 
 // Review fields shown in step 3
