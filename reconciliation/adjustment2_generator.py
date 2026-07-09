@@ -10,17 +10,20 @@ Economic meaning: collection recorded that reduced NO open debtor balance
 
 Two layers:
   1. VALUE       -> the identity above (exact; uses the 5 control totals the
-                    recon statement already produces).
-  2. ATTRIBUTION -> which realised bill payments reduced nothing: invoice
+                    recon statement already produces). Opening MUST be the
+                    Balance b/f AFTER adjustment, not before.
+  2. ATTRIBUTION -> realised bill payments that reduced nothing: invoice
                     absent from BOTH the opening and closing debtor ledgers,
-                    on a bill from before the recon month. Their sum should
-                    equal the VALUE; any residual stays manual.
+                    on a bill from before the recon month.
 
-Inputs (path, text stream, or raw bytes all accepted):
-  - Collection transaction CSV -> Collection total + candidate rows
-  - Opening debtor detail CSV (invoice-level) -> membership test
-  - Closing debtor detail CSV (invoice-level) -> membership test
-  - Sales total, Credits total, Opening_after_adj, Closing -> control check (optional)
+Robustness:
+  - CSVs are read as utf-8-sig so a BOM on the header row can't hide the
+    first column (a common cause of an empty ledger).
+  - The invoice/balance columns are auto-detected if the configured names
+    aren't present.
+  - If no balance column is found, membership falls back to "invoice present
+    in the debtor file" (a debtors report only lists accounts that owe).
+  - Opening/closing invoice counts are reported so an empty load is visible.
 
 Collection CSV columns (observed):
   PAYMENT_NOX, CHQINF, ACCOUNT_NO, OLD_ACC_NO, AMT, COLLECT_AMOUNT, INVOICE_NO,
@@ -69,17 +72,34 @@ def _period(bill_ref):
 
 
 def _text(source):
+    """Return CSV text with any BOM stripped (utf-8-sig)."""
     if hasattr(source, "read"):
         data = source.read()
-        return data.decode("utf-8", "replace") if isinstance(data, (bytes, bytearray)) else data
+        if isinstance(data, (bytes, bytearray)):
+            return bytes(data).decode("utf-8-sig", "replace")
+        return data.lstrip("\ufeff") if isinstance(data, str) else data
     if isinstance(source, (bytes, bytearray)):
-        return bytes(source).decode("utf-8", "replace")
-    with open(source, encoding="utf-8", errors="replace", newline="") as f:
+        return bytes(source).decode("utf-8-sig", "replace")
+    with open(source, encoding="utf-8-sig", errors="replace", newline="") as f:
         return f.read()
 
 
 def _reader(source):
     return csv.DictReader(io.StringIO(_text(source)))
+
+
+def _detect_col(fieldnames, preferred, keywords):
+    fields = [f for f in (fieldnames or []) if f is not None]
+    for f in fields:
+        if f.strip() == preferred:
+            return f
+    low = {f.strip().lower(): f for f in fields}
+    if preferred.strip().lower() in low:
+        return low[preferred.strip().lower()]
+    for f in fields:
+        if any(k in f.strip().lower() for k in keywords):
+            return f
+    return None
 
 
 # --- loaders ---------------------------------------------------------------
@@ -89,13 +109,28 @@ def load_collection_rows(source):
 
 def load_debtor_invoices(source, invoice_col=DEBTOR_INVOICE_COL,
                          balance_col=DEBTOR_BALANCE_COL):
-    """{invoice_no: outstanding_balance} for rows carrying a non-zero balance."""
+    """{invoice_no: outstanding_balance} for invoices carrying an open balance.
+
+    If no balance column can be found, every listed invoice is treated as
+    on-ledger (a debtors report only lists accounts that owe)."""
+    rows = list(_reader(source))
+    if not rows:
+        return {}
+    fields = list(rows[0].keys())
+    inv_col = _detect_col(fields, invoice_col, ["invoice"])
+    bal_col = _detect_col(fields, balance_col, ["balance", "outstand", "o/s", "closing"])
     out = {}
-    for row in _reader(source):
-        inv = (row.get(invoice_col) or "").strip()
-        bal = _num(row.get(balance_col))
-        if inv and abs(bal) > ABSORB_EPSILON:
-            out[inv] = out.get(inv, 0.0) + bal
+    for r in rows:
+        inv = (r.get(inv_col) or "").strip() if inv_col else ""
+        if not inv:
+            continue
+        if bal_col is not None:
+            b = _num(r.get(bal_col))
+            if b <= ABSORB_EPSILON:      # only POSITIVE (owed) balances are open debtors;
+                continue                 # a credit / zero balance is not something a payment reduced
+            out[inv] = out.get(inv, 0.0) + b
+        else:
+            out.setdefault(inv, 0.0)
     return out
 
 
@@ -108,6 +143,8 @@ class Adjustment2Result:
     unabsorbed_total: float
     residual_manual: Optional[float]
     unabsorbed_rows: List[dict] = field(default_factory=list)
+    open_count: int = 0
+    close_count: int = 0
 
 
 def compute_realised_collection(coll_rows):
@@ -168,6 +205,8 @@ def reconcile(coll_rows, debt_open, debt_close, recon_month,
         unabsorbed_total=attributed,
         residual_manual=residual,
         unabsorbed_rows=sorted(rows, key=lambda r: -abs(r["amount"])),
+        open_count=len(debt_open),
+        close_count=len(debt_close),
     )
 
 
@@ -175,16 +214,14 @@ def reconcile(coll_rows, debt_open, debt_close, recon_month,
 def summary_steps(result: Adjustment2Result):
     fmt = lambda v: ("—" if v is None else f"{v:,.2f}")
     return [
-        {"title": "Load collection ledger",
-         "desc": "ORD 1+2, cancelled dropped",
+        {"title": "Load collection ledger", "desc": "ORD 1+2, cancelled dropped",
          "val": f"MRF {result.collection_realised:,.2f}"},
         {"title": "Load opening debtors", "desc": "invoice-level balances",
-         "val": "loaded"},
+         "val": f"{result.open_count:,} invoices"},
         {"title": "Load closing debtors", "desc": "invoice-level balances",
-         "val": "loaded"},
-        {"title": "Scan unabsorbed payments",
-         "desc": "prior-period bill, off both ledgers",
-         "val": f"{len(result.unabsorbed_rows)} row(s)"},
+         "val": f"{result.close_count:,} invoices"},
+        {"title": "Scan unabsorbed payments", "desc": "prior-period bill, off both ledgers",
+         "val": f"{len(result.unabsorbed_rows):,} row(s)"},
         {"title": "Sum -> Adjustment (2)", "desc": "attributed total",
          "val": f"MRF {result.unabsorbed_total:,.2f}"},
         {"title": "Check vs identity", "desc": "residual stays manual",
@@ -200,6 +237,8 @@ def summary_b64(result: Adjustment2Result):
         "unabsorbed_total": result.unabsorbed_total,
         "residual_manual": result.residual_manual,
         "row_count": len(result.unabsorbed_rows),
+        "open_count": result.open_count,
+        "close_count": result.close_count,
         "steps": summary_steps(result),
     }
     return base64.b64encode(json.dumps(payload).encode("utf-8")).decode("ascii")
@@ -219,7 +258,9 @@ def _fill_workbook(result: Adjustment2Result):
     ws["A5"] = "Realised collection";   ws["B5"] = result.collection_realised
     ws["A6"] = "Attributed (itemised)"; ws["B6"] = result.unabsorbed_total
     ws["A7"] = "Residual (manual)";     ws["B7"] = result.residual_manual
-    for c in ("A3", "A4", "A5", "A6", "A7"):
+    ws["A8"] = "Opening invoices";      ws["B8"] = result.open_count
+    ws["A9"] = "Closing invoices";      ws["B9"] = result.close_count
+    for c in ("A3", "A4", "A5", "A6", "A7", "A8", "A9"):
         ws[c].font = bold
     d = wb.create_sheet("Unabsorbed")
     d.append(["Invoice No", "Account No", "Bill Ref", "Amount",
