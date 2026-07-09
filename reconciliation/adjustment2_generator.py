@@ -145,6 +145,7 @@ class Adjustment2Result:
     unabsorbed_rows: List[dict] = field(default_factory=list)
     open_count: int = 0
     close_count: int = 0
+    method: str = "ledger"
 
 
 def compute_realised_collection(coll_rows):
@@ -158,6 +159,32 @@ def compute_realised_collection(coll_rows):
 
 def identity_value(opening_after_adj, closing, sales, credits, collection):
     return round(closing - opening_after_adj - sales - credits + collection, 2)
+
+
+def _detail_row(r):
+    return {
+        "invoice_no": (r.get("INVOICE_NO") or "").strip(),
+        "account_no": (r.get("ACCOUNT_NO") or "").strip(),
+        "bill_ref": (r.get("BILL_REF") or "").strip(),
+        "amount": round(_num(r.get("COLLECT_AMOUNT")), 2),
+        "paid_date": (r.get("PAID_DATE") or "").strip(),
+        "payment_mode": (r.get("PAYMENT_MODE") or "").strip(),
+        "category": (r.get("CAT_SNAME") or "").strip(),
+    }
+
+
+def amount_match(coll_rows, target, tol=ABSORB_EPSILON):
+    """Realised payments whose own amount equals the plug — the scan that
+    actually surfaced invoice 101999505 by hand."""
+    out = []
+    for r in coll_rows:
+        if (r.get("ORD") or "").strip() not in ("1", "2"):
+            continue
+        if (r.get("CANCEL_DATE") or "").strip():
+            continue
+        if abs(_num(r.get("COLLECT_AMOUNT")) - target) <= tol:
+            out.append(_detail_row(r))
+    return out
 
 
 def attribute(coll_rows, debt_open, debt_close, recon_month):
@@ -176,28 +203,34 @@ def attribute(coll_rows, debt_open, debt_close, recon_month):
             continue
         if inv in debt_open or inv in debt_close:
             continue
-        rows.append({
-            "invoice_no": inv,
-            "account_no": (r.get("ACCOUNT_NO") or "").strip(),
-            "bill_ref": (r.get("BILL_REF") or "").strip(),
-            "amount": round(_num(r.get("COLLECT_AMOUNT")), 2),
-            "paid_date": (r.get("PAID_DATE") or "").strip(),
-            "payment_mode": (r.get("PAYMENT_MODE") or "").strip(),
-            "category": (r.get("CAT_SNAME") or "").strip(),
-        })
+        rows.append(_detail_row(r))
     return rows
 
 
 def reconcile(coll_rows, debt_open, debt_close, recon_month,
               opening_after_adj=None, closing=None, sales=None, credits=None):
     collection = compute_realised_collection(coll_rows)
-    rows = attribute(coll_rows, debt_open, debt_close, recon_month)
-    attributed = round(sum(r["amount"] for r in rows), 2)
+    ledger_rows = attribute(coll_rows, debt_open, debt_close, recon_month)
+    ledger_total = round(sum(r["amount"] for r in ledger_rows), 2)
+
     if None in (opening_after_adj, closing, sales, credits):
         value = residual = None
+        rows, method = ledger_rows, "ledger"
     else:
         value = identity_value(opening_after_adj, closing, sales, credits, collection)
-        residual = round(value - attributed, 2)
+        # If the ledger method already reconciles to the plug, keep it.
+        # Otherwise fall back to the amount-match scan on the plug value.
+        if abs(ledger_total - value) <= ABSORB_EPSILON and ledger_rows:
+            rows, method = ledger_rows, "ledger"
+        else:
+            matched = amount_match(coll_rows, value)
+            if matched:
+                rows, method = matched, "amount-match"
+            else:
+                rows, method = ledger_rows, "ledger"
+        residual = round(value - round(sum(r["amount"] for r in rows), 2), 2)
+
+    attributed = round(sum(r["amount"] for r in rows), 2)
     return Adjustment2Result(
         recon_month=recon_month,
         value_from_identity=value,
@@ -207,6 +240,7 @@ def reconcile(coll_rows, debt_open, debt_close, recon_month,
         unabsorbed_rows=sorted(rows, key=lambda r: -abs(r["amount"])),
         open_count=len(debt_open),
         close_count=len(debt_close),
+        method=method,
     )
 
 
@@ -222,7 +256,7 @@ def summary_steps(result: Adjustment2Result):
          "val": f"{result.close_count:,} invoices"},
         {"title": "Scan unabsorbed payments", "desc": "prior-period bill, off both ledgers",
          "val": f"{len(result.unabsorbed_rows):,} row(s)"},
-        {"title": "Sum -> Adjustment (2)", "desc": "attributed total",
+        {"title": "Sum -> Adjustment (2)", "desc": f"attributed ({result.method})",
          "val": f"MRF {result.unabsorbed_total:,.2f}"},
         {"title": "Check vs identity", "desc": "residual stays manual",
          "val": f"id {fmt(result.value_from_identity)} / res {fmt(result.residual_manual)}"},
@@ -239,6 +273,7 @@ def summary_b64(result: Adjustment2Result):
         "row_count": len(result.unabsorbed_rows),
         "open_count": result.open_count,
         "close_count": result.close_count,
+        "method": result.method,
         "steps": summary_steps(result),
     }
     return base64.b64encode(json.dumps(payload).encode("utf-8")).decode("ascii")
@@ -260,7 +295,8 @@ def _fill_workbook(result: Adjustment2Result):
     ws["A7"] = "Residual (manual)";     ws["B7"] = result.residual_manual
     ws["A8"] = "Opening invoices";      ws["B8"] = result.open_count
     ws["A9"] = "Closing invoices";      ws["B9"] = result.close_count
-    for c in ("A3", "A4", "A5", "A6", "A7", "A8", "A9"):
+    ws["A10"] = "Attribution method";    ws["B10"] = result.method
+    for c in ("A3", "A4", "A5", "A6", "A7", "A8", "A9", "A10"):
         ws[c].font = bold
     d = wb.create_sheet("Unabsorbed")
     d.append(["Invoice No", "Account No", "Bill Ref", "Amount",
