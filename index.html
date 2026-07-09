@@ -94,6 +94,7 @@
 <div class="top-tabs">
   <button class="top-tab active" data-tab="recon">Reconciliation</button>
   <button class="top-tab" data-tab="adjustment">Adjustment</button>
+  <button class="top-tab" data-tab="adjustment2">Adjustment (2)</button>
 </div>
 
 <!-- ════════════════════════════════════════════════════════════ -->
@@ -354,7 +355,98 @@
   </div>
 </div><!-- /#adjustmentTab -->
 
+<!-- ════════════════════════════════════════════════════════════ -->
+<!-- ADJUSTMENT (2) TAB                                             -->
+<!-- ════════════════════════════════════════════════════════════ -->
+<div id="adjustment2Tab" style="display:none;">
+  <div class="app-body">
+    <main class="main-content">
+      <section class="step-panel active">
+        <div class="panel-header">
+          <h1 class="panel-title">Adjustment (2)</h1>
+          <p class="panel-desc">
+            The closing-side plug: collection recorded that reduced no open debtor balance.
+            <strong>Adj(2) = Closing − Opening(after adj) − Sales − Credits + Collection.</strong>
+            Upload the collection ledger plus the opening &amp; closing debtor detail; unabsorbed
+            payments (prior-period bills that sit on neither ledger) are itemised. Enter the four
+            control totals to check the itemised sum against the identity.
+          </p>
+        </div>
+
+        <div class="adj-layout">
+          <div class="adj-left">
+            <div class="date-row">
+              <div class="field-group">
+                <label class="field-label">Recon Month</label>
+                <input type="month" id="adj2Month" class="field-input">
+              </div>
+            </div>
+
+            <div class="upload-grid" id="adjustment2UploadGrid"></div>
+
+            <div class="date-row" style="margin-top:14px;flex-wrap:wrap;">
+              <div class="field-group">
+                <label class="field-label">Opening (after adj) <span style="color:#94a3b8;font-weight:400">— optional, enables check</span></label>
+                <input type="text" id="a2_opening_after_adj" class="field-input" placeholder="134135591.76">
+              </div>
+              <div class="field-group">
+                <label class="field-label">Closing</label>
+                <input type="text" id="a2_closing" class="field-input" placeholder="137669353.35">
+              </div>
+              <div class="field-group">
+                <label class="field-label">Sales</label>
+                <input type="text" id="a2_sales" class="field-input" placeholder="73556897.74">
+              </div>
+              <div class="field-group">
+                <label class="field-label">Credits</label>
+                <input type="text" id="a2_credits" class="field-input" placeholder="45724.92">
+              </div>
+            </div>
+
+            <div class="panel-actions">
+              <button class="btn-primary" id="adj2GenerateBtn" disabled>⬇ Generate Adjustment (2) File</button>
+            </div>
+
+            <p class="review-note" id="adj2Status"></p>
+          </div>
+
+          <aside class="adj-right">
+            <canvas id="matrix2Canvas"
+                    style="position:absolute;inset:0;width:100%;height:100%;z-index:0;opacity:.5;"></canvas>
+            <div class="work-title" style="position:relative;z-index:1;">▚ HOW ADJUSTMENT (2) IS FOUND</div>
+            <div class="work-steps" id="adj2Working" style="position:relative;z-index:1;"></div>
+          </aside>
+        </div>
+      </section>
+    </main>
+  </div>
+</div><!-- /#adjustment2Tab -->
+
 <script src="js/app.js"></script>
 <script src="js/adjustment.js"></script>
+<script src="js/adjustment2.js"></script>
+<script>
+/* Unified tab switcher — owns all three tabs. Bound inside DOMContentLoaded so
+   it registers AFTER any handler in adjustment.js; running last means the final
+   panel visibility is always correct even if an older two-tab switcher also
+   fires. Non-blocking, so the Adjustment tab's own first-open init still runs. */
+document.addEventListener("DOMContentLoaded", function () {
+  var PANELS = { recon: "reconTab", adjustment: "adjustmentTab", adjustment2: "adjustment2Tab" };
+  document.querySelectorAll(".top-tab").forEach(function (btn) {
+    btn.addEventListener("click", function () {
+      document.querySelectorAll(".top-tab").forEach(function (b) { b.classList.remove("active"); });
+      btn.classList.add("active");
+      var target = btn.dataset.tab;
+      Object.keys(PANELS).forEach(function (name) {
+        var el = document.getElementById(PANELS[name]);
+        if (el) el.style.display = (name === target) ? "" : "none";
+      });
+      if (target === "adjustment2" && typeof window.initAdjustment2Tab === "function") {
+        window.initAdjustment2Tab();
+      }
+    });
+  });
+});
+</script>
 </body>
 </html>
