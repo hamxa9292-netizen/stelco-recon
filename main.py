@@ -1,6 +1,6 @@
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, StreamingResponse
 import tempfile, os, json, io
 from parser.male import parse_male
 from parser.hulhumale import parse_hulhumale
@@ -8,6 +8,10 @@ from parser.thilafushi import parse_thilafushi
 from parser.gulhi_falhu import parse_gulhi_falhu
 from parser.adjustments import find_adjustments, ISLAND_BY_LOCATION
 from reconciliation.adjustment_generator import identify, write_xlsx
+from reconciliation.adjustment2_generator import (
+    load_collection_rows, load_debtor_invoices, reconcile,
+    generate_xlsx_bytes, summary_b64,
+)
 from datetime import datetime, date
 from reconciliation.calculator import calculate
 from reconciliation.generator import generate_docx
@@ -18,7 +22,8 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
     expose_headers=["X-Adjustment-Total", "X-Adjustment-Rows",
-                    "X-Adjustment-Review", "X-Adjustment-Summary"],
+                    "X-Adjustment-Review", "X-Adjustment-Summary",
+                    "X-Adjustment2-Summary"],
 )
 PARSERS = {
     "male":       parse_male,
@@ -158,3 +163,54 @@ async def adjustments(
         raise
     except Exception as e:
         raise HTTPException(500, f"Adjustment error: {str(e)}")
+# ──────────────────────────────────────────────────────────────────────
+# ADJUSTMENT (2) TAB — the CLOSING-side plug.
+# Adj(2) = Closing - Opening(after adj) - Sales - Credits + Collection.
+# Attributes the plug to realised bill payments that reduced no open
+# debtor balance (prior-period invoices absent from both debtor ledgers).
+# ──────────────────────────────────────────────────────────────────────
+@app.post("/adjustments2")
+async def adjustments2(
+    recon_month: str = Form(...),                # "2026-06"
+    collection_csv:    UploadFile = File(...),   # CollectionReport_inter.csv
+    open_debtors_csv:  UploadFile = File(...),   # opening (prior-month closing) debtor detail
+    close_debtors_csv: UploadFile = File(...),   # closing debtor detail
+    opening_after_adj: float = Form(None),       # control totals — optional; enable the identity check
+    closing: float = Form(None),
+    sales:   float = Form(None),
+    credits: float = Form(None),
+    invoice_col: str = Form("INVOICE_NO"),       # override if your debtor CSV differs
+    balance_col: str = Form("BALANCE_AMT"),
+):
+    try:
+        year, month = (int(p) for p in recon_month.split("-")[:2])
+    except Exception:
+        raise HTTPException(400, "recon_month must be YYYY-MM, e.g. 2026-06")
+    try:
+        coll = load_collection_rows(await collection_csv.read())
+        debt_open  = load_debtor_invoices(await open_debtors_csv.read(),  invoice_col, balance_col)
+        debt_close = load_debtor_invoices(await close_debtors_csv.read(), invoice_col, balance_col)
+
+        result = reconcile(
+            coll_rows=coll,
+            debt_open=debt_open,
+            debt_close=debt_close,
+            recon_month=(year, month),
+            opening_after_adj=opening_after_adj,
+            closing=closing,
+            sales=sales,
+            credits=credits,
+        )
+
+        return StreamingResponse(
+            generate_xlsx_bytes(result),
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers={
+                "X-Adjustment2-Summary": summary_b64(result),
+                "Content-Disposition": f'attachment; filename="Adjustment2_{recon_month}.xlsx"',
+            },
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(500, f"Adjustment (2) error: {str(e)}")
