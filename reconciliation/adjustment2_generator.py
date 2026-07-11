@@ -135,16 +135,30 @@ def detect(coll_rows, open_rows, close_rows, sales_rows, recon_month,
     c_inv=_find(cf,INV,["invoice"]); c_bd=_find(cf,BILLDATE,["bill_date","billdate"])
     c_pay=_find(cf,PAYAMT,["pay_amt","payamt","paid"]); c_acc=_find(cf,CACC,["account"]); c_ref=_find(cf,CREF,["bill_ref","ref"])
 
+    # per-invoice realised collection in the CURRENT month (ORD=1, cancelled excluded)
+    coll_by_inv={}
+    for r in coll_rows:
+        if (r.get(CORD) or "").strip()=="1" and not (r.get(CCANCEL) or "").strip():
+            iv=(r.get(INV) or "").strip()
+            if iv: coll_by_inv[iv]=coll_by_inv.get(iv,0.0)+_num(r.get(CAMT))
+
     rows=[]
-    # CLASS A
+    # CLASS A: bill dated after month-end with a payment already applied, where that
+    # payment is NOT (fully) in this month's collection -> a genuine timing gap.
+    # If the payment IS in this month's collection, the invoice reconciles normally
+    # (sale, payment and closing balance all in-period) and is NOT an adjustment.
     if c_bd and c_pay:
         for r in close_rows:
             bd=_date(r.get(c_bd)); pay=_num(r.get(c_pay))
             if bd and bd>month_end and pay>EPS:
-                rows.append({"invoice_no":(r.get(c_inv) or "").strip(),
-                             "account_no":(r.get(c_acc) or "").strip() if c_acc else "",
-                             "bill_ref":(r.get(c_ref) or "").strip() if c_ref else "",
-                             "amount":round(-pay,2), "class":"A", "reason":"late payment (paid after sale period)"})
+                iv=(r.get(c_inv) or "").strip()
+                gap=round(pay - coll_by_inv.get(iv,0.0), 2)   # payment not covered by this month's collection
+                if gap>EPS:
+                    rows.append({"invoice_no":iv,
+                                 "account_no":(r.get(c_acc) or "").strip() if c_acc else "",
+                                 "bill_ref":(r.get(c_ref) or "").strip() if c_ref else "",
+                                 "amount":round(-gap,2), "class":"A",
+                                 "reason":"late payment (paid, not in this month's collection)"})
     # CLASS B & CLASS C from collection
     B=[]; Ctot={}
     for r in coll_rows:
