@@ -9,7 +9,8 @@ from parser.gulhi_falhu import parse_gulhi_falhu
 from parser.adjustments import find_adjustments, ISLAND_BY_LOCATION
 from reconciliation.adjustment_generator import identify, write_xlsx
 from reconciliation.adjustment2_generator import (
-    load_collection_rows, load_debtor_invoices, reconcile,
+    load_collection_rows, load_debtor_rows, detect,
+    realised_collection, plug_from_totals,
     generate_xlsx_bytes, summary_b64,
 )
 from datetime import datetime, date
@@ -171,42 +172,38 @@ async def adjustments(
 # ──────────────────────────────────────────────────────────────────────
 @app.post("/adjustments2")
 async def adjustments2(
-    recon_month: str = Form(...),                # "2026-06"
-    collection_csv:    UploadFile = File(...),   # CollectionReport_inter.csv
+    recon_month: str = Form(...),                # "2026-05"
+    collection_csv:    UploadFile = File(...),   # collection transactions
     open_debtors_csv:  UploadFile = File(...),   # opening (prior-month closing) debtor detail
     close_debtors_csv: UploadFile = File(...),   # closing debtor detail
-    opening_after_adj: float = Form(None),       # control totals — optional; enable the identity check
+    sales_csv:         UploadFile = File(...),   # CURRENT-month sales (invoice-level)
+    opening_after_adj: float = Form(None),       # control totals -> plug (all four enable it)
     closing: float = Form(None),
     sales:   float = Form(None),
     credits: float = Form(None),
-    invoice_col: str = Form("INVOICE_NO"),       # override if your debtor CSV differs
-    balance_col: str = Form("BALANCE_AMT"),
 ):
     try:
         year, month = (int(p) for p in recon_month.split("-")[:2])
     except Exception:
-        raise HTTPException(400, "recon_month must be YYYY-MM, e.g. 2026-06")
+        raise HTTPException(400, "recon_month must be YYYY-MM, e.g. 2026-05")
     try:
-        coll = load_collection_rows(await collection_csv.read())
-        debt_open  = load_debtor_invoices(await open_debtors_csv.read(),  invoice_col, balance_col)
-        debt_close = load_debtor_invoices(await close_debtors_csv.read(), invoice_col, balance_col)
+        coll       = load_collection_rows(await collection_csv.read())
+        open_rows  = load_debtor_rows(await open_debtors_csv.read())
+        close_rows = load_debtor_rows(await close_debtors_csv.read())
+        sales_rows = load_debtor_rows(await sales_csv.read())
 
-        result = reconcile(
-            coll_rows=coll,
-            debt_open=debt_open,
-            debt_close=debt_close,
-            recon_month=(year, month),
-            opening_after_adj=opening_after_adj,
-            closing=closing,
-            sales=sales,
-            credits=credits,
-        )
+        plug = None
+        if None not in (opening_after_adj, closing, sales, credits):
+            plug = plug_from_totals(opening_after_adj, closing, sales, credits,
+                                    realised_collection(coll))
+
+        res = detect(coll, open_rows, close_rows, sales_rows, (year, month), plug=plug)
 
         return StreamingResponse(
-            generate_xlsx_bytes(result),
+            generate_xlsx_bytes(res),
             media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             headers={
-                "X-Adjustment2-Summary": summary_b64(result),
+                "X-Adjustment2-Summary": summary_b64(res),
                 "Content-Disposition": f'attachment; filename="Adjustment2_{recon_month}.xlsx"',
             },
         )
