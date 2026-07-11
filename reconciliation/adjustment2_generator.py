@@ -227,3 +227,18 @@ def generate_xlsx_bytes(res: Adj2Result):
     ws.append(["RESIDUAL","","",res.residual,"",""])
     if res.note: ws.append(["NOTE","","",res.note,"",""])
     buf=io.BytesIO(); wb.save(buf); buf.seek(0); return buf
+
+
+# ---------------------------------------------------------------- plug helpers
+def realised_collection(coll_rows):
+    """Realised collection = ORD 1+2 payments, cancelled excluded."""
+    t = 0.0
+    for r in coll_rows:
+        if (r.get(CORD) or "").strip() in ("1", "2") and not (r.get(CCANCEL) or "").strip():
+            t += _num(r.get(CAMT))
+    return round(t, 2)
+
+
+def plug_from_totals(opening_after_adj, closing, sales, credits, collection):
+    """Adj(2) plug = Closing - Opening(after adj) - Sales - Credits + Collection."""
+    return round(closing - opening_after_adj - sales - credits + collection, 2)
