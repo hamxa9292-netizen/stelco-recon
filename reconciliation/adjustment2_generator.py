@@ -1,321 +1,229 @@
 """
-reconciliation/adjustment2_generator.py
+reconciliation/adjustment2_generator.py   (v3 - timing/over-payment detector)
 
-Adjustment (2) — the CLOSING-side plug on the Debtors Reconciliation Statement.
+Itemises Adjustment (2) into invoice-level rows via three deterministic classes,
+then reconciles their sum to the identity plug.
 
-    Adj(2) = Closing - Opening_after_adj - Sales - Credits + Collection
+    Adj(2) = Closing - Opening(after adj) - Sales - Credits + Collection   (= the plug)
 
-Economic meaning: collection recorded that reduced NO open debtor balance
-(payments landing on invoices already settled / off-ledger).
+Classes:
+  A  late payment on a current-period sale
+       closing debtor row with BILL_DATE after month-end AND PAY_AMT > 0
+       amount = -PAY_AMT        (exact, from the closing debtor file)
+  C  over-payment / duplicate on a settled past bill
+       realised ORD=1 payment on a past/current-period invoice that is absent
+       from BOTH debtor ledgers and NOT billed in the current sales report
+       amount = +payment        (exact, from the collection file)
+  B  early payment on a future-dated bill
+       realised ORD=1 payment whose BILL_REF period is AFTER the recon month
+       amount = the future bill value -> NOT in current files, so it is
+       BACKED OUT of the plug:  Class_B_total = plug - sum(A) - sum(C)
+       exact when there is a single Class B invoice; when there are 2+, the
+       combined total is known but the per-invoice split needs next-month sales
+       (supply next_sales_amounts) or is left for manual entry.
 
-Two layers:
-  1. VALUE       -> the identity above (exact; uses the 5 control totals the
-                    recon statement already produces). Opening MUST be the
-                    Balance b/f AFTER adjustment, not before.
-  2. ATTRIBUTION -> realised bill payments that reduced nothing: invoice
-                    absent from BOTH the opening and closing debtor ledgers,
-                    on a bill from before the recon month.
-
-Robustness:
-  - CSVs are read as utf-8-sig so a BOM on the header row can't hide the
-    first column (a common cause of an empty ledger).
-  - The invoice/balance columns are auto-detected if the configured names
-    aren't present.
-  - If no balance column is found, membership falls back to "invoice present
-    in the debtor file" (a debtors report only lists accounts that owe).
-  - Opening/closing invoice counts are reported so an empty load is visible.
-
-Collection CSV columns (observed):
-  PAYMENT_NOX, CHQINF, ACCOUNT_NO, OLD_ACC_NO, AMT, COLLECT_AMOUNT, INVOICE_NO,
-  PAYMENT_MODE, PAID_DATE, BILL_REF, ISLAND_SNAME, PAYLOC, TRANS_ISLAND,
-  CAT_SNAME, USER_NAME, ACDES, CANCEL_DATE, ORD
-    ORD=1 bill payments, ORD=2 credit payments, ORD>=3 deposits/settlements.
-    CANCEL_DATE non-empty -> cancelled (excluded from realised).
+Inputs (paths, text streams, or bytes): opening debtor, closing debtor,
+current collection, current sales, and the four control totals for the plug.
 
 Requires: openpyxl==3.1.5
 """
 
-import csv
-import io
-import json
-import base64
+import csv, io, json, base64, calendar, datetime
 from dataclasses import dataclass, field
-from typing import Optional, List, Tuple
+from typing import Optional, List, Tuple, Dict
 
-# --- CONFIG: confirm against your debtor detail CSVs ------------------------
-DEBTOR_INVOICE_COL = "INVOICE_NO"
-DEBTOR_BALANCE_COL = "BALANCE_AMT"
-ABSORB_EPSILON = 0.005
-
+# column names (auto-detected if absent)
+INV="INVOICE_NO"; BAL="BALANCE_AMT"; BILLDATE="BILL_DATE"; PAYAMT="PAY_AMT"
+CAMT="COLLECT_AMOUNT"; CREF="BILL_REF"; CORD="ORD"; CCANCEL="CANCEL_DATE"
+CACC="ACCOUNT_NO"; SAMT="AMOUNT"
+EPS=0.005
 
 def _num(x):
-    x = (x or "").strip().replace(",", "")
-    if not x:
-        return 0.0
-    try:
-        return float(x)
-    except ValueError:
-        return 0.0
+    x=(x or "").strip().replace(",","")
+    try: return float(x) if x else 0.0
+    except ValueError: return 0.0
 
+def _text(src):
+    if hasattr(src,"read"):
+        d=src.read(); return d.decode("utf-8-sig","replace") if isinstance(d,(bytes,bytearray)) else (d.lstrip("\ufeff") if isinstance(d,str) else d)
+    if isinstance(src,(bytes,bytearray)): return bytes(src).decode("utf-8-sig","replace")
+    with open(src, encoding="utf-8-sig", errors="replace", newline="") as f: return f.read()
 
-def _period(bill_ref):
-    """'2026/5-1' -> (2026, 5). None if unparseable."""
-    br = (bill_ref or "").strip()
-    if not br or "/" not in br:
-        return None
-    try:
-        year, rest = br.split("/", 1)
-        month = rest.split("-", 1)[0]
-        return (int(year), int(month))
-    except (ValueError, IndexError):
-        return None
+def _rows(src): return list(csv.DictReader(io.StringIO(_text(src))))
 
-
-def _text(source):
-    """Return CSV text with any BOM stripped (utf-8-sig)."""
-    if hasattr(source, "read"):
-        data = source.read()
-        if isinstance(data, (bytes, bytearray)):
-            return bytes(data).decode("utf-8-sig", "replace")
-        return data.lstrip("\ufeff") if isinstance(data, str) else data
-    if isinstance(source, (bytes, bytearray)):
-        return bytes(source).decode("utf-8-sig", "replace")
-    with open(source, encoding="utf-8-sig", errors="replace", newline="") as f:
-        return f.read()
-
-
-def _reader(source):
-    return csv.DictReader(io.StringIO(_text(source)))
-
-
-def _detect_col(fieldnames, preferred, keywords):
-    fields = [f for f in (fieldnames or []) if f is not None]
+def _find(fields, preferred, keys):
+    fields=[f for f in (fields or []) if f]
     for f in fields:
-        if f.strip() == preferred:
-            return f
-    low = {f.strip().lower(): f for f in fields}
-    if preferred.strip().lower() in low:
-        return low[preferred.strip().lower()]
+        if f.strip()==preferred: return f
+    low={f.strip().lower():f for f in fields}
+    if preferred.lower() in low: return low[preferred.lower()]
     for f in fields:
-        if any(k in f.strip().lower() for k in keywords):
-            return f
+        if any(k in f.strip().lower() for k in keys): return f
     return None
 
+def _date(s):
+    s=(s or "").strip()
+    for fmt in ("%d-%m-%Y","%Y-%m-%d","%d/%m/%Y","%m/%d/%Y"):
+        try: return datetime.datetime.strptime(s,fmt).date()
+        except ValueError: pass
+    return None
 
-# --- loaders ---------------------------------------------------------------
-def load_collection_rows(source):
-    return list(_reader(source))
+def _period(ref):
+    ref=(ref or "").strip()
+    if "/" not in ref: return None
+    try:
+        y,rest=ref.split("/",1); return (int(y), int(rest.split("-")[0]))
+    except (ValueError,IndexError): return None
 
+def _month_end(y,m):
+    return datetime.date(y,m,calendar.monthrange(y,m)[1])
 
-def load_debtor_invoices(source, invoice_col=DEBTOR_INVOICE_COL,
-                         balance_col=DEBTOR_BALANCE_COL):
-    """{invoice_no: outstanding_balance} for invoices carrying an open balance.
+# ---------------------------------------------------------------- loaders
+def load_collection_rows(src): return _rows(src)
 
-    If no balance column can be found, every listed invoice is treated as
-    on-ledger (a debtors report only lists accounts that owe)."""
-    rows = list(_reader(source))
-    if not rows:
-        return {}
-    fields = list(rows[0].keys())
-    inv_col = _detect_col(fields, invoice_col, ["invoice"])
-    bal_col = _detect_col(fields, balance_col, ["balance", "outstand", "o/s", "closing"])
-    out = {}
+def load_debtor_rows(src):
+    return _rows(src)
+
+def debtor_invoice_set(rows, positive_only=True):
+    if not rows: return set()
+    inv=_find(rows[0].keys(), INV, ["invoice"]); bal=_find(rows[0].keys(), BAL, ["balance","outstand"])
+    out=set()
     for r in rows:
-        inv = (r.get(inv_col) or "").strip() if inv_col else ""
-        if not inv:
-            continue
-        if bal_col is not None:
-            b = _num(r.get(bal_col))
-            if b <= ABSORB_EPSILON:      # only POSITIVE (owed) balances are open debtors;
-                continue                 # a credit / zero balance is not something a payment reduced
-            out[inv] = out.get(inv, 0.0) + b
+        i=(r.get(inv) or "").strip()
+        if not i: continue
+        if bal is None: out.add(i)
         else:
-            out.setdefault(inv, 0.0)
+            b=_num(r.get(bal))
+            if (b>EPS) if positive_only else (abs(b)>EPS): out.add(i)
     return out
 
+def sales_invoice_set(rows):
+    if not rows: return set()
+    inv=_find(rows[0].keys(), INV, ["invoice"])
+    return {(r.get(inv) or "").strip() for r in rows if (r.get(inv) or "").strip()}
 
-# --- core ------------------------------------------------------------------
+def sales_amounts(rows):
+    if not rows: return {}
+    inv=_find(rows[0].keys(), INV, ["invoice"]); amt=_find(rows[0].keys(), SAMT, ["amount"])
+    out={}
+    for r in rows:
+        i=(r.get(inv) or "").strip()
+        if i: out[i]=out.get(i,0.0)+_num(r.get(amt))
+    return out
+
+# ---------------------------------------------------------------- core
 @dataclass
-class Adjustment2Result:
-    recon_month: Tuple[int, int]
-    value_from_identity: Optional[float]
-    collection_realised: float
-    unabsorbed_total: float
-    residual_manual: Optional[float]
-    unabsorbed_rows: List[dict] = field(default_factory=list)
-    open_count: int = 0
-    close_count: int = 0
-    method: str = "ledger"
+class Adj2Result:
+    recon_month: Tuple[int,int]
+    plug: Optional[float]
+    rows: List[dict] = field(default_factory=list)
+    total: float = 0.0
+    residual: Optional[float] = None
+    classB_needs_split: bool = False
+    note: str = ""
 
+def detect(coll_rows, open_rows, close_rows, sales_rows, recon_month,
+           plug=None, next_sales_amounts: Optional[Dict[str,float]]=None):
+    y,m=recon_month
+    month_end=_month_end(y,m)
+    d_open=debtor_invoice_set(open_rows)
+    d_close=debtor_invoice_set(close_rows)
+    billed=sales_invoice_set(sales_rows)
 
-def compute_realised_collection(coll_rows):
-    total = 0.0
+    # column handles for closing debtor (Class A)
+    cf=close_rows[0].keys() if close_rows else []
+    c_inv=_find(cf,INV,["invoice"]); c_bd=_find(cf,BILLDATE,["bill_date","billdate"])
+    c_pay=_find(cf,PAYAMT,["pay_amt","payamt","paid"]); c_acc=_find(cf,CACC,["account"]); c_ref=_find(cf,CREF,["bill_ref","ref"])
+
+    rows=[]
+    # CLASS A
+    if c_bd and c_pay:
+        for r in close_rows:
+            bd=_date(r.get(c_bd)); pay=_num(r.get(c_pay))
+            if bd and bd>month_end and pay>EPS:
+                rows.append({"invoice_no":(r.get(c_inv) or "").strip(),
+                             "account_no":(r.get(c_acc) or "").strip() if c_acc else "",
+                             "bill_ref":(r.get(c_ref) or "").strip() if c_ref else "",
+                             "amount":round(-pay,2), "class":"A", "reason":"late payment (paid after sale period)"})
+    # CLASS B & CLASS C from collection
+    B=[]; Ctot={}
     for r in coll_rows:
-        if (r.get("ORD") or "").strip() in ("1", "2") \
-                and not (r.get("CANCEL_DATE") or "").strip():
-            total += _num(r.get("COLLECT_AMOUNT"))
-    return round(total, 2)
+        if (r.get(CORD) or "").strip()!="1" or (r.get(CCANCEL) or "").strip(): continue
+        inv=(r.get(INV) or "").strip()
+        if not inv: continue
+        p=_period(r.get(CREF))
+        if p and p>recon_month:
+            B.append({"invoice_no":inv,"account_no":(r.get(CACC) or "").strip(),
+                      "bill_ref":(r.get(CREF) or "").strip()})
+        elif p and p<=recon_month and inv not in d_open and inv not in d_close and inv not in billed:
+            key=(inv,(r.get(CACC) or "").strip(),(r.get(CREF) or "").strip())
+            Ctot[key]=Ctot.get(key,0.0)+_num(r.get(CAMT))
+    for (inv,acc,ref),a in Ctot.items():
+        rows.append({"invoice_no":inv,"account_no":acc,"bill_ref":ref,
+                     "amount":round(a,2),"class":"C","reason":"over-payment on settled bill"})
 
+    # dedupe B by invoice
+    seen=set(); Bu=[]
+    for b in B:
+        if b["invoice_no"] not in seen:
+            seen.add(b["invoice_no"]); Bu.append(b)
 
-def identity_value(opening_after_adj, closing, sales, credits, collection):
-    return round(closing - opening_after_adj - sales - credits + collection, 2)
-
-
-def _detail_row(r):
-    return {
-        "invoice_no": (r.get("INVOICE_NO") or "").strip(),
-        "account_no": (r.get("ACCOUNT_NO") or "").strip(),
-        "bill_ref": (r.get("BILL_REF") or "").strip(),
-        "amount": round(_num(r.get("COLLECT_AMOUNT")), 2),
-        "paid_date": (r.get("PAID_DATE") or "").strip(),
-        "payment_mode": (r.get("PAYMENT_MODE") or "").strip(),
-        "category": (r.get("CAT_SNAME") or "").strip(),
-    }
-
-
-def amount_match(coll_rows, target, tol=ABSORB_EPSILON):
-    """Realised payments whose own amount equals the plug — the scan that
-    actually surfaced invoice 101999505 by hand."""
-    out = []
-    for r in coll_rows:
-        if (r.get("ORD") or "").strip() not in ("1", "2"):
-            continue
-        if (r.get("CANCEL_DATE") or "").strip():
-            continue
-        if abs(_num(r.get("COLLECT_AMOUNT")) - target) <= tol:
-            out.append(_detail_row(r))
-    return out
-
-
-def attribute(coll_rows, debt_open, debt_close, recon_month):
-    """Realised ORD=1 payments on prior-period bills absent from both ledgers."""
-    rows = []
-    for r in coll_rows:
-        if (r.get("ORD") or "").strip() != "1":
-            continue
-        if (r.get("CANCEL_DATE") or "").strip():
-            continue
-        inv = (r.get("INVOICE_NO") or "").strip()
-        if not inv:
-            continue
-        per = _period(r.get("BILL_REF"))
-        if per is None or per >= recon_month:
-            continue
-        if inv in debt_open or inv in debt_close:
-            continue
-        rows.append(_detail_row(r))
-    return rows
-
-
-def reconcile(coll_rows, debt_open, debt_close, recon_month,
-              opening_after_adj=None, closing=None, sales=None, credits=None):
-    collection = compute_realised_collection(coll_rows)
-    ledger_rows = attribute(coll_rows, debt_open, debt_close, recon_month)
-    ledger_total = round(sum(r["amount"] for r in ledger_rows), 2)
-
-    if None in (opening_after_adj, closing, sales, credits):
-        value = residual = None
-        rows, method = ledger_rows, "ledger"
-    else:
-        value = identity_value(opening_after_adj, closing, sales, credits, collection)
-        # If the ledger method already reconciles to the plug, keep it.
-        # Otherwise fall back to the amount-match scan on the plug value.
-        if abs(ledger_total - value) <= ABSORB_EPSILON and ledger_rows:
-            rows, method = ledger_rows, "ledger"
-        else:
-            matched = amount_match(coll_rows, value)
-            if matched:
-                rows, method = matched, "amount-match"
+    sumAC=round(sum(r["amount"] for r in rows),2)
+    needs_split=False; note=""
+    if Bu:
+        if plug is not None:
+            B_total=round(plug - sumAC,2)
+            if len(Bu)==1:
+                Bu[0].update({"amount":B_total,"class":"B","reason":"early payment (future-dated bill)"})
+                rows.append(Bu[0])
             else:
-                rows, method = ledger_rows, "ledger"
-        residual = round(value - round(sum(r["amount"] for r in rows), 2), 2)
+                # split per-invoice from next-month sales if available; else flag
+                assigned=0.0; unresolved=[]
+                for b in Bu:
+                    amt=(next_sales_amounts or {}).get(b["invoice_no"])
+                    if amt is not None:
+                        b.update({"amount":round(amt,2),"class":"B","reason":"early payment (future-dated bill)"}); assigned+=amt; rows.append(b)
+                    else:
+                        unresolved.append(b)
+                gap=round(B_total-round(assigned,2),2)
+                if unresolved:
+                    needs_split=True
+                    note=(f"{len(unresolved)} Class B invoice(s) need next-month sales to split "
+                          f"{gap:.2f}: "+", ".join(b['invoice_no'] for b in unresolved))
+                    for b in unresolved:
+                        b.update({"amount":None,"class":"B","reason":"early payment (future-dated bill) - amount pending next-month sales"}); rows.append(b)
+        else:
+            for b in Bu:
+                b.update({"amount":None,"class":"B","reason":"early payment (future-dated bill) - amount pending (no plug supplied)"}); rows.append(b)
+            needs_split=True; note="No plug supplied; Class B amounts unresolved."
 
-    attributed = round(sum(r["amount"] for r in rows), 2)
-    return Adjustment2Result(
-        recon_month=recon_month,
-        value_from_identity=value,
-        collection_realised=collection,
-        unabsorbed_total=attributed,
-        residual_manual=residual,
-        unabsorbed_rows=sorted(rows, key=lambda r: -abs(r["amount"])),
-        open_count=len(debt_open),
-        close_count=len(debt_close),
-        method=method,
-    )
+    total=round(sum(r["amount"] for r in rows if r["amount"] is not None),2)
+    residual=round(plug-total,2) if plug is not None else None
+    rows.sort(key=lambda r:(r["class"], -(abs(r["amount"]) if r["amount"] is not None else 0)))
+    return Adj2Result(recon_month, plug, rows, total, residual, needs_split, note)
 
-
-# --- visualizer summary (base64 JSON header, like X-Adjustment-Summary) -----
-def summary_steps(result: Adjustment2Result):
-    fmt = lambda v: ("—" if v is None else f"{v:,.2f}")
-    return [
-        {"title": "Load collection ledger", "desc": "ORD 1+2, cancelled dropped",
-         "val": f"MRF {result.collection_realised:,.2f}"},
-        {"title": "Load opening debtors", "desc": "invoice-level balances",
-         "val": f"{result.open_count:,} invoices"},
-        {"title": "Load closing debtors", "desc": "invoice-level balances",
-         "val": f"{result.close_count:,} invoices"},
-        {"title": "Scan unabsorbed payments", "desc": "prior-period bill, off both ledgers",
-         "val": f"{len(result.unabsorbed_rows):,} row(s)"},
-        {"title": "Sum -> Adjustment (2)", "desc": f"attributed ({result.method})",
-         "val": f"MRF {result.unabsorbed_total:,.2f}"},
-        {"title": "Check vs identity", "desc": "residual stays manual",
-         "val": f"id {fmt(result.value_from_identity)} / res {fmt(result.residual_manual)}"},
+def summary_b64(res: Adj2Result):
+    steps=[
+        {"title":"Class A - late payments","desc":"paid after sale period","val":f"{sum(1 for r in res.rows if r['class']=='A')} row(s)"},
+        {"title":"Class C - over-payments","desc":"settled past bill","val":f"{sum(1 for r in res.rows if r['class']=='C')} row(s)"},
+        {"title":"Class B - future bills","desc":"paid before sale; backed out of plug","val":f"{sum(1 for r in res.rows if r['class']=='B')} row(s)"},
+        {"title":"Reconcile to plug","desc":"residual should be 0","val":f"total {res.total:.2f} / plug {('%.2f'%res.plug) if res.plug is not None else '—'}"},
     ]
+    payload={"recon_month":f"{res.recon_month[0]}-{res.recon_month[1]:02d}","plug":res.plug,
+             "total":res.total,"residual":res.residual,"row_count":len(res.rows),
+             "needs_split":res.classB_needs_split,"note":res.note,"steps":steps}
+    return base64.b64encode(json.dumps(payload).encode()).decode()
 
-
-def summary_b64(result: Adjustment2Result):
-    payload = {
-        "recon_month": f"{result.recon_month[0]}-{result.recon_month[1]:02d}",
-        "value_from_identity": result.value_from_identity,
-        "collection_realised": result.collection_realised,
-        "unabsorbed_total": result.unabsorbed_total,
-        "residual_manual": result.residual_manual,
-        "row_count": len(result.unabsorbed_rows),
-        "open_count": result.open_count,
-        "close_count": result.close_count,
-        "method": result.method,
-        "steps": summary_steps(result),
-    }
-    return base64.b64encode(json.dumps(payload).encode("utf-8")).decode("ascii")
-
-
-# --- xlsx ------------------------------------------------------------------
-def _fill_workbook(result: Adjustment2Result):
+def generate_xlsx_bytes(res: Adj2Result):
     from openpyxl import Workbook
     from openpyxl.styles import Font
-    wb = Workbook()
-    ws = wb.active
-    ws.title = "Summary"
-    bold = Font(bold=True)
-    ws["A1"] = "Adjustment (2) - Reconciliation"; ws["A1"].font = bold
-    ws["A3"] = "Recon month";           ws["B3"] = f"{result.recon_month[0]}-{result.recon_month[1]:02d}"
-    ws["A4"] = "Adj(2) (identity)";     ws["B4"] = result.value_from_identity
-    ws["A5"] = "Realised collection";   ws["B5"] = result.collection_realised
-    ws["A6"] = "Attributed (itemised)"; ws["B6"] = result.unabsorbed_total
-    ws["A7"] = "Residual (manual)";     ws["B7"] = result.residual_manual
-    ws["A8"] = "Opening invoices";      ws["B8"] = result.open_count
-    ws["A9"] = "Closing invoices";      ws["B9"] = result.close_count
-    ws["A10"] = "Attribution method";    ws["B10"] = result.method
-    for c in ("A3", "A4", "A5", "A6", "A7", "A8", "A9", "A10"):
-        ws[c].font = bold
-    d = wb.create_sheet("Unabsorbed")
-    d.append(["Invoice No", "Account No", "Bill Ref", "Amount",
-              "Paid Date", "Payment Mode", "Category"])
-    for c in d[1]:
-        c.font = bold
-    for row in result.unabsorbed_rows:
-        d.append([row["invoice_no"], row["account_no"], row["bill_ref"],
-                  row["amount"], row["paid_date"], row["payment_mode"], row["category"]])
-    return wb
-
-
-def generate_xlsx_bytes(result: Adjustment2Result):
-    buf = io.BytesIO()
-    _fill_workbook(result).save(buf)
-    buf.seek(0)
-    return buf
-
-
-def generate_xlsx(result: Adjustment2Result, out_path):
-    _fill_workbook(result).save(out_path)
-    return out_path
+    wb=Workbook(); ws=wb.active; ws.title="Adjustment2"; b=Font(bold=True)
+    ws.append(["Invoice No","Account No","Bill Ref","Amount","Class","Reason"])
+    for c in ws[1]: c.font=b
+    for r in res.rows:
+        ws.append([r["invoice_no"],r["account_no"],r["bill_ref"],r["amount"],r["class"],r["reason"]])
+    ws.append([]); ws.append(["TOTAL","","",res.total,"",""]); ws[ws.max_row][0].font=b
+    ws.append(["PLUG (identity)","","",res.plug,"",""])
+    ws.append(["RESIDUAL","","",res.residual,"",""])
+    if res.note: ws.append(["NOTE","","",res.note,"",""])
+    buf=io.BytesIO(); wb.save(buf); buf.seek(0); return buf
