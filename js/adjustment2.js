@@ -15,6 +15,8 @@
       desc: "Prior-month closing debtor detail (invoice-level)" },
     { key: "close_debtors_csv",label: "Closing Debtors (CSV)",   icon: "📁",
       desc: "Current-month closing debtor detail (invoice-level)" },
+    { key: "sales_csv",        label: "Current Sales (CSV)",     icon: "📊",
+      desc: "This month's sales report (invoice-level)" },
   ];
 
   var files = {};
@@ -139,6 +141,7 @@
     form.append("collection_csv", files.collection_csv);
     form.append("open_debtors_csv", files.open_debtors_csv);
     form.append("close_debtors_csv", files.close_debtors_csv);
+    form.append("sales_csv", files.sales_csv);
     form.append("recon_month", document.getElementById("adj2Month").value);
     ["opening_after_adj", "closing", "sales", "credits"].forEach(function (id) {
       var v = document.getElementById("a2_" + id).value.replace(/[^0-9.\-]/g, "");
