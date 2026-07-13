@@ -111,12 +111,14 @@
     var cols = Math.floor(c.width / 12);
     var drops = Array(cols).fill(1);
     function draw() {
-      ctx.fillStyle = "rgba(6,12,8,0.10)";
+      ctx.fillStyle = "rgba(21,28,51,0.11)";           // panel wash, matches --panel
       ctx.fillRect(0, 0, c.width, c.height);
-      ctx.fillStyle = "#00ff41";
-      ctx.font = "12px 'Courier New', monospace";
+      ctx.font = "12px 'JetBrains Mono', monospace";
       for (var i = 0; i < drops.length; i++) {
         var t = glyphs[Math.floor(Math.random() * glyphs.length)];
+        // electric spectrum: cyan body, violet/magenta sparks
+        var r = Math.random();
+        ctx.fillStyle = r > 0.97 ? "#FF3D9A" : (r > 0.88 ? "#7B5CFF" : "#2DE2E6");
         ctx.fillText(t, i * 12, drops[i] * 12);
         if (drops[i] * 12 > c.height && Math.random() > 0.975) drops[i] = 0;
         drops[i]++;
