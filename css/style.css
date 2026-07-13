@@ -202,7 +202,9 @@ body {
    Fields
    ============================================================ */
 .date-row { display: flex; gap: 15px; flex-wrap: wrap; margin-bottom: 26px; }
-.field-group { flex: 1 1 190px; min-width: 170px; }
+/* fields size to their content — a date is a date, not a banner */
+.field-group { flex: 0 1 240px; min-width: 180px; max-width: 280px; }
+.field-group.wide { flex: 0 1 340px; max-width: 380px; }
 .field-label {
   display: block; font-size: 11px; font-weight: 600; color: var(--muted);
   letter-spacing: .05em; margin-bottom: 7px;
@@ -463,6 +465,7 @@ select.field-input { font-family: var(--body); }
   .recon-right, .adj-right { position: static; flex-basis: 100%; width: 100%; }
 }
 @media (max-width: 620px) {
+  .field-group, .field-group.wide { flex: 1 1 100%; max-width: none; }
   .app-body { padding-left: 16px; padding-right: 16px; }
   .header-inner, .top-tabs { padding-left: 16px; padding-right: 16px; }
   .header-meta { display: none; }
