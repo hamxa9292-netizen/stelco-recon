@@ -5,74 +5,9 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>STELCO Debtors Reconciliation</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="css/style.css">
-<style>
-  /* Top tab bar (Reconciliation / Adjustment) — fixed below the 60px header */
-  .top-tabs { display:flex !important; gap:8px; padding:12px 24px; background:#fff;
-              border-bottom:1px solid #e2e8f0; position:fixed; top:60px; left:0; right:0; z-index:101; }
-  .top-tab { padding:8px 18px; border:none; background:transparent; cursor:pointer;
-             font-family:inherit; font-weight:600; font-size:14px; color:#64748b;
-             border-radius:8px; transition:background .15s, color .15s; }
-  .top-tab:hover { background:#f1f5f9; }
-  .top-tab.active { background:#0f172a; color:#fff; }
-  /* push content below the fixed tab bar */
-  .app-body { padding-top:58px; }
-  .adj-status-ok { color:#047857; }
-  .adj-status-err { color:#b91c1c; }
-
-  /* Reconciliation snapshot (right side of Upload Files step) */
-  .recon-layout { display:flex; gap:28px; align-items:flex-start; flex-wrap:wrap; }
-  .recon-left { flex:1 1 460px; min-width:300px; }
-  .recon-right { flex:0 0 320px; width:320px; background:#0f172a; color:#e2e8f0;
-                 border-radius:14px; padding:16px 16px 14px; position:sticky; top:120px; }
-  .snap-title { font-size:12px; font-weight:700; letter-spacing:.5px; color:#93c5fd;
-                margin-bottom:12px; font-family:'Courier New', monospace; }
-  .snap-head { display:flex; justify-content:space-between; font-size:12px; font-weight:600;
-               color:#cbd5e1; padding-bottom:8px; border-bottom:1px solid #334155; margin-bottom:6px; }
-  .snap-table { width:100%; border-collapse:collapse; font-size:11px; }
-  .snap-table th { text-align:right; color:#64748b; font-weight:600; padding:4px 4px 6px; }
-  .snap-table th:first-child { text-align:left; }
-  .snap-table td { padding:3px 4px; text-align:right; color:#e2e8f0; font-variant-numeric:tabular-nums; }
-  .snap-table td:first-child { text-align:left; color:#cbd5e1; }
-  .snap-sub td { border-top:1px solid #334155; color:#94a3b8; }
-  .snap-bold td { font-weight:700; }
-  .snap-final td { border-top:2px solid #475569; font-weight:700; color:#fff; padding-top:5px; }
-  .snap-hint { margin-top:12px; font-size:11px; color:#64748b; text-align:center; font-style:italic; }
-  @media (max-width:900px){ .recon-right{ flex-basis:100%; width:100%; position:static; } }
-
-  /* Adjustment tab two-column layout */
-  .adj-layout { display:flex; gap:28px; align-items:flex-start; flex-wrap:wrap; }
-  .adj-left { flex:1 1 480px; min-width:320px; }
-  .adj-right { flex:0 0 340px; width:340px; background:#060c08; border:1px solid #123a22;
-               border-radius:14px; padding:18px 18px 8px; position:relative; overflow:hidden;
-               min-height:380px; box-shadow:0 0 26px rgba(0,255,65,.10); }
-  #matrixCanvas { position:absolute; inset:0; width:100%; height:100%; z-index:0; opacity:.5; }
-  .adj-right > .work-title, .adj-right > .work-steps { position:relative; z-index:1; }
-  .work-title { font-weight:700; font-size:14px; color:#39ff14; margin-bottom:14px;
-                letter-spacing:.5px; text-shadow:0 0 8px rgba(57,255,20,.5);
-                font-family:'Courier New', monospace; }
-  .work-steps { position:relative; }
-  .work-step { display:flex; gap:12px; padding-bottom:18px; position:relative; }
-  .work-step:not(:last-child)::before { content:""; position:absolute; left:13px; top:26px;
-              bottom:0; width:2px; background:#143821; }
-  .work-step.done:not(:last-child)::before { background:#00ff41; box-shadow:0 0 6px #00ff41; }
-  .work-dot { flex:0 0 26px; width:26px; height:26px; border-radius:50%; display:flex;
-              align-items:center; justify-content:center; font-size:12px; font-weight:700;
-              background:#0c1a11; color:#3a7a4a; border:1px solid #1d4d2e; z-index:1; transition:.25s; }
-  .work-step.active .work-dot { background:#f59e0b; color:#0a0a0a; border-color:#f59e0b;
-              box-shadow:0 0 0 4px rgba(245,158,11,.3), 0 0 14px #f59e0b; }
-  .work-step.done .work-dot { background:#00ff41; color:#06120a; border-color:#00ff41;
-              box-shadow:0 0 10px rgba(0,255,65,.6); }
-  .work-step.error .work-dot { background:#ef4444; color:#fff; border-color:#ef4444; }
-  .work-body { flex:1; }
-  .work-step-title { font-size:13px; font-weight:600; color:#d6ffe0; }
-  .work-step-desc { font-size:12px; color:#5c8c68; margin-top:2px; }
-  .work-step-val { font-size:12px; font-weight:700; color:#39ff14; margin-top:4px; min-height:1px;
-                   font-family:'Courier New', monospace; text-shadow:0 0 6px rgba(57,255,20,.45); }
-  .work-step.pending .work-step-title { color:#5c8c68; }
-  @media (max-width:900px){ .adj-right{ flex-basis:100%; width:100%; } }
-</style>
 </head>
 <body>
 
@@ -387,19 +322,19 @@
             <div class="date-row" style="margin-top:14px;flex-wrap:wrap;">
               <div class="field-group">
                 <label class="field-label">Opening (after adj) <span style="color:#94a3b8;font-weight:400">— optional, enables check</span></label>
-                <input type="text" id="a2_opening_after_adj" class="field-input" placeholder="">
+                <input type="text" id="a2_opening_after_adj" class="field-input" placeholder="134135591.76">
               </div>
               <div class="field-group">
                 <label class="field-label">Closing</label>
-                <input type="text" id="a2_closing" class="field-input" placeholder="">
+                <input type="text" id="a2_closing" class="field-input" placeholder="137669353.35">
               </div>
               <div class="field-group">
                 <label class="field-label">Sales</label>
-                <input type="text" id="a2_sales" class="field-input" placeholder="">
+                <input type="text" id="a2_sales" class="field-input" placeholder="73556897.74">
               </div>
               <div class="field-group">
                 <label class="field-label">Credits</label>
-                <input type="text" id="a2_credits" class="field-input" placeholder="">
+                <input type="text" id="a2_credits" class="field-input" placeholder="45724.92">
               </div>
             </div>
 
