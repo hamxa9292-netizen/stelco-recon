@@ -136,11 +136,13 @@ def detect(coll_rows, open_rows, close_rows, sales_rows, recon_month,
     c_pay=_find(cf,PAYAMT,["pay_amt","payamt","paid"]); c_acc=_find(cf,CACC,["account"]); c_ref=_find(cf,CREF,["bill_ref","ref"])
 
     # per-invoice realised collection in the CURRENT month (ORD=1, cancelled excluded)
-    coll_by_inv={}
+    coll_by_inv={}; coll_meta={}
     for r in coll_rows:
         if (r.get(CORD) or "").strip()=="1" and not (r.get(CCANCEL) or "").strip():
             iv=(r.get(INV) or "").strip()
-            if iv: coll_by_inv[iv]=coll_by_inv.get(iv,0.0)+_num(r.get(CAMT))
+            if iv:
+                coll_by_inv[iv]=coll_by_inv.get(iv,0.0)+_num(r.get(CAMT))
+                coll_meta.setdefault(iv, r)
 
     rows=[]
     # CLASS A: bill dated after month-end with a payment already applied, where that
@@ -210,6 +212,55 @@ def detect(coll_rows, open_rows, close_rows, sales_rows, recon_month,
             for b in Bu:
                 b.update({"amount":None,"class":"B","reason":"early payment (future-dated bill) - amount pending (no plug supplied)"}); rows.append(b)
             needs_split=True; note="No plug supplied; Class B amounts unresolved."
+
+    # CLASS D - over-payment on a CURRENT-month bill, resolved by exact plug match.
+    #
+    # Many invoices are over-paid by small amounts each month (customers paying a
+    # round figure). The billing system books most of those excesses to Credits -
+    # a separate line on the statement - so they are NOT Adj(2). The decisive
+    # field is the applied-vs-credit split on the payment, which no available
+    # export carries. The excess alone therefore cannot identify the adjustment:
+    # a threshold that catches one month's row wrongly catches another's.
+    #
+    # What CAN be trusted is an exact match. If precisely ONE candidate's excess
+    # equals the outstanding residual to the cent, that is the adjustment. Zero
+    # or several matches are reported as candidates for review, never guessed.
+    d_candidates=[]
+    if plug is not None:
+        so_far=round(sum(r["amount"] for r in rows if r["amount"] is not None),2)
+        gap_left=round(plug-so_far,2)
+        if abs(gap_left)>EPS:
+            sale_amt=sales_amounts(sales_rows)
+            for iv,s_amt in sale_amt.items():
+                if s_amt<=EPS or iv in d_open or iv in d_close:
+                    continue
+                excess=round(coll_by_inv.get(iv,0.0)-s_amt,2)
+                if excess>EPS:
+                    d_candidates.append((iv,excess))
+            exact=[c for c in d_candidates if abs(c[1]-gap_left)<=EPS]
+            if len(exact)==1:
+                iv,amt=exact[0]
+                mrow=coll_meta.get(iv,{})
+                rows.append({"invoice_no":iv,
+                             "account_no":(mrow.get(CACC) or "").strip(),
+                             "bill_ref":(mrow.get(CREF) or "").strip(),
+                             "amount":amt,"class":"D",
+                             "reason":"over-payment on current-month bill"})
+            elif d_candidates:
+                d_candidates.sort(key=lambda c:-c[1])
+                top=", ".join(f"{iv} ({ex:.2f})" for iv,ex in d_candidates[:5])
+                if len(exact)>1:
+                    note=(note+" " if note else "")+(
+                        f"{len(exact)} current-month over-payments each match the "
+                        f"{gap_left:.2f} residual exactly - ambiguous, review needed: "
+                        +", ".join(iv for iv,_ in exact))
+                    needs_split=True
+                else:
+                    note=(note+" " if note else "")+(
+                        f"Residual {gap_left:.2f} unmatched. Nearest current-month "
+                        f"over-payments: {top}. The applied-vs-credit split is not "
+                        f"exported, so this needs manual confirmation.")
+                    needs_split=True
 
     total=round(sum(r["amount"] for r in rows if r["amount"] is not None),2)
     residual=round(plug-total,2) if plug is not None else None
