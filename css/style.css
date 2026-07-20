@@ -222,6 +222,26 @@ body {
 }
 select.field-input { font-family: var(--body); }
 
+/* statement-totals block (Adjustment 2) */
+.totals-head {
+  display: flex; align-items: baseline; justify-content: space-between;
+  gap: 12px; margin: 22px 0 10px; flex-wrap: wrap;
+}
+.totals-title {
+  font-size: 10px; letter-spacing: .18em; text-transform: uppercase;
+  color: var(--dim); font-weight: 600;
+}
+.btn-link {
+  border: 0; background: none; cursor: pointer; padding: 0;
+  font-family: var(--body); font-size: 12px; font-weight: 600;
+  color: var(--arc-cyan); border-bottom: 1px solid transparent;
+  transition: border-color .18s, color .18s;
+}
+.btn-link:hover { border-bottom-color: var(--arc-cyan); }
+.btn-link:focus-visible { outline: 2px solid var(--arc-cyan); outline-offset: 3px; }
+.totals-row { margin-bottom: 8px; }
+.field-hint { font-size: 11.5px; color: var(--dim); line-height: 1.55; margin-bottom: 4px; }
+
 /* ============================================================
    Buttons — one primary voice, the rest quiet
    ============================================================ */
