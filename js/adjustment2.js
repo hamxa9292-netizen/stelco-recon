@@ -22,6 +22,48 @@
   var files = {};
   var matrixTimer = null;
 
+
+  // --- prefill statement totals from the Reconciliation tab ------------------
+  // app.js keeps parsed figures on the shared `state`. Same four numbers the
+  // statement uses, so there's no reason to retype them.
+  var TOTAL_MAP = {
+    a2_opening_after_adj: "elec_bfadj",
+    a2_closing:           "elec_close_system",
+    a2_sales:             "elec_sales",
+    a2_credits:           "elec_credits",
+  };
+
+  function reconFigures() {
+    return (typeof state !== "undefined" && state && state.figures) ? state.figures : null;
+  }
+
+  function fillTotals(overwrite) {
+    var figs = reconFigures();
+    var status = document.getElementById("adj2Status");
+    if (!figs || !Object.keys(figs).length) {
+      if (overwrite && status) {
+        status.className = "review-note adj-status-err";
+        status.textContent = "No parsed figures yet. Run the Reconciliation tab first, or type the totals here.";
+      }
+      return 0;
+    }
+    var n = 0;
+    Object.keys(TOTAL_MAP).forEach(function (id) {
+      var el = document.getElementById(id);
+      var v = figs[TOTAL_MAP[id]];
+      if (!el || v === undefined || v === null || v === "") return;
+      if (!overwrite && el.value.trim() !== "") return;
+      el.value = Number(v).toFixed(2);
+      n++;
+    });
+    if (n && status) {
+      status.className = "review-note adj-status-ok";
+      status.textContent = "Filled " + n + " total(s) from Reconciliation. Edit any of them if needed.";
+    }
+    checkReady();
+    return n;
+  }
+
   // --- render upload slots -------------------------------------------------
   function renderSlots() {
     var grid = document.getElementById("adjustment2UploadGrid");
@@ -194,12 +236,14 @@
     if (m) m.addEventListener("change", checkReady);
     var b = document.getElementById("adj2GenerateBtn");
     if (b) b.addEventListener("click", generate);
+    var f = document.getElementById("adj2FillBtn");
+    if (f) f.addEventListener("click", function () { fillTotals(true); });
   }
 
   // expose an initializer the tab-switcher can call the first time this tab opens
   window.initAdjustment2Tab = (function () {
     var once = false;
-    return function () { if (!once) { once = true; init(); } startMatrix(); };
+    return function () { if (!once) { once = true; init(); } startMatrix(); fillTotals(false); };
   })();
 
   document.addEventListener("DOMContentLoaded", function () {
