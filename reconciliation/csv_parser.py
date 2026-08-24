@@ -1,12 +1,17 @@
 """
 reconciliation/csv_parser.py
-Replaces the PDF parsers: computes the same `figures` dict the web app's
-review step already expects, but straight from CSV exports.
+Computes the same `figures` dict the web app's review step expects, from CSVs.
+Streams each file (row by row) so 100k+ row files use minimal memory instead
+of loading every row into a list.
 """
 import csv, io
 
+ELEC_DESCRIPTIONS = {"ELECTRICITY SALE", "FINE", "CHARGES FROM PREV BILL"}
+
 
 def _text(src):
+    if src is None:
+        return None
     if hasattr(src, "read"):
         d = src.read()
         return d.decode("utf-8-sig", "replace") if isinstance(d, (bytes, bytearray)) else d
@@ -14,12 +19,6 @@ def _text(src):
         return bytes(src).decode("utf-8-sig", "replace")
     with open(src, encoding="utf-8-sig", errors="replace", newline="") as fh:
         return fh.read()
-
-
-def _rows(src):
-    if src is None:
-        return []
-    return list(csv.DictReader(io.StringIO(_text(src))))
 
 
 def _num(x):
@@ -30,73 +29,93 @@ def _num(x):
         return 0.0
 
 
-def _find(fields, preferred, keys):
-    fields = [f for f in (fields or []) if f]
-    for f in fields:
-        if f.strip().lstrip("\ufeff").upper() == preferred.upper():
-            return f
-    low = {f.strip().lstrip("\ufeff").lower(): f for f in fields}
+def _find_idx(header, preferred, keys):
+    hs = [(h or "").strip().lstrip("\ufeff") for h in header]
+    for i, h in enumerate(hs):
+        if h.upper() == preferred.upper():
+            return i
+    low = {h.lower(): i for i, h in enumerate(hs)}
     if preferred.lower() in low:
         return low[preferred.lower()]
-    for f in fields:
-        if any(k in f.strip().lower() for k in keys):
-            return f
+    for i, h in enumerate(hs):
+        if any(k in h.lower() for k in keys):
+            return i
     return None
 
 
-def _sum(rows, preferred, keys):
-    if not rows:
+def _reader(src):
+    txt = _text(src)
+    if txt is None:
+        return None
+    return csv.reader(io.StringIO(txt))
+
+
+def _stream_sum(src, preferred, keys):
+    """Sum one column, streaming - never holds all rows."""
+    rdr = _reader(src)
+    if rdr is None:
         return 0.0
-    col = _find(rows[0].keys(), preferred, keys)
-    if not col:
+    try:
+        header = next(rdr)
+    except StopIteration:
         return 0.0
-    return round(sum(_num(r.get(col)) for r in rows), 2)
-
-
-ELEC_DESCRIPTIONS = {"ELECTRICITY SALE", "FINE", "CHARGES FROM PREV BILL"}
-
-
-def _realised_collection(rows):
-    if not rows:
+    idx = _find_idx(header, preferred, keys)
+    if idx is None:
         return 0.0
-    hdr = rows[0].keys()
-    c_ord = _find(hdr, "ORD", ["ord"])
-    c_canc = _find(hdr, "CANCEL_DATE", ["cancel"])
-    c_desc = _find(hdr, "DESCRIPTION", ["description", "cdt_desc"])
-    c_amt = _find(hdr, "COLLECT_AMOUNT", ["collect_amount", "collect"])
-    c_comp = _find(hdr, "AMOUNT", ["amount"])
     total = 0.0
-    for r in rows:
-        if c_canc and (r.get(c_canc) or "").strip():
+    for row in rdr:
+        if idx < len(row):
+            total += _num(row[idx])
+    return round(total, 2)
+
+
+def _stream_realised(src):
+    """Realised collection: ORD 1+2 (cancelled excluded), or DESCRIPTION-filtered
+    for no-ORD files. Streams row by row."""
+    rdr = _reader(src)
+    if rdr is None:
+        return 0.0
+    try:
+        header = next(rdr)
+    except StopIteration:
+        return 0.0
+    i_ord = _find_idx(header, "ORD", ["ord"])
+    i_canc = _find_idx(header, "CANCEL_DATE", ["cancel"])
+    i_desc = _find_idx(header, "DESCRIPTION", ["description", "cdt_desc"])
+    i_amt = _find_idx(header, "COLLECT_AMOUNT", ["collect_amount", "collect"])
+    i_comp = _find_idx(header, "AMOUNT", ["amount"])
+    total = 0.0
+    for row in rdr:
+        if i_canc is not None and i_canc < len(row) and row[i_canc].strip():
             continue
-        if c_ord:
-            if (r.get(c_ord) or "").strip() in ("1", "2"):
-                total += _num(r.get(c_amt))
-        elif c_desc:
-            if (r.get(c_desc) or "").strip().upper() in ELEC_DESCRIPTIONS:
-                total += _num(r.get(c_comp) if c_comp else r.get(c_amt))
+        if i_ord is not None:
+            o = row[i_ord].strip() if i_ord < len(row) else ""
+            if o in ("1", "2") and i_amt is not None and i_amt < len(row):
+                total += _num(row[i_amt])
+        elif i_desc is not None:
+            d = row[i_desc].strip().upper() if i_desc < len(row) else ""
+            if d in ELEC_DESCRIPTIONS:
+                col = i_comp if i_comp is not None else i_amt
+                if col is not None and col < len(row):
+                    total += _num(row[col])
         else:
-            total += _num(r.get(c_amt))
+            if i_amt is not None and i_amt < len(row):
+                total += _num(row[i_amt])
     return round(total, 2)
 
 
 def parse_csv_figures(files, location, passthrough=None):
     passthrough = passthrough or {}
-    open_rows = _rows(files.get("open_csv"))
-    close_rows = _rows(files.get("close_csv"))
-    sales_rows = _rows(files.get("sales_csv"))
-    coll_rows = _rows(files.get("collection_csv"))
-    credits_rows = _rows(files.get("credits_csv"))
-    prior_rows = _rows(files.get("prior_close_csv"))
+    BAL = ("BALANCE_AMT", ["balance", "outstand"])
 
-    elec_bfadj = _sum(open_rows, "BALANCE_AMT", ["balance", "outstand"])
-    elec_close = _sum(close_rows, "BALANCE_AMT", ["balance", "outstand"])
-    elec_sales = _sum(sales_rows, "AMOUNT", ["amount"])
-    elec_credits = _sum(credits_rows, "AMOUNT", ["amount"])
-    elec_billing = _realised_collection(coll_rows)
+    elec_bfadj = _stream_sum(files.get("open_csv"), *BAL)
+    elec_close = _stream_sum(files.get("close_csv"), *BAL)
+    elec_sales = _stream_sum(files.get("sales_csv"), "AMOUNT", ["amount"])
+    elec_credits = _stream_sum(files.get("credits_csv"), "AMOUNT", ["amount"])
+    elec_billing = _stream_realised(files.get("collection_csv"))
 
-    if prior_rows:
-        elec_bf = _sum(prior_rows, "BALANCE_AMT", ["balance", "outstand"])
+    if files.get("prior_close_csv") is not None:
+        elec_bf = _stream_sum(files.get("prior_close_csv"), *BAL)
     else:
         elec_bf = _num(passthrough.get("elec_bf")) or elec_bfadj
 
@@ -117,20 +136,17 @@ def parse_csv_figures(files, location, passthrough=None):
         "elec_close_system": elec_close,
     }
 
-    misc_open = _rows(files.get("misc_open_csv"))
-    misc_close = _rows(files.get("misc_close_csv"))
-    misc_sales = _rows(files.get("misc_sales_csv"))
-    misc_coll = _rows(files.get("misc_coll_csv"))
-    if misc_open or misc_close:
-        m_bfadj = _sum(misc_open, "BALANCE_AMT", ["balance", "outstand"])
+    has_misc = files.get("misc_open_csv") is not None or files.get("misc_close_csv") is not None
+    if has_misc:
+        m_bfadj = _stream_sum(files.get("misc_open_csv"), *BAL)
         figures.update({
             "misc_bf": m_bfadj,
             "misc_bfadj": m_bfadj,
-            "misc_sales": _sum(misc_sales, "ITM_AMOUNT", ["itm_amount", "amount"]),
+            "misc_sales": _stream_sum(files.get("misc_sales_csv"), "ITM_AMOUNT", ["itm_amount", "amount"]),
             "misc_credits": _num(passthrough.get("misc_credits")),
             "misc_discount": _num(passthrough.get("misc_discount")),
-            "misc_collection": _sum(misc_coll, "AMOUNT", ["amount"]),
-            "misc_close_system": _sum(misc_close, "BALANCE_AMT", ["balance", "outstand"]),
+            "misc_collection": _stream_sum(files.get("misc_coll_csv"), "AMOUNT", ["amount"]),
+            "misc_close_system": _stream_sum(files.get("misc_close_csv"), *BAL),
         })
     else:
         for k in ("misc_bf", "misc_bfadj", "misc_sales", "misc_credits",
