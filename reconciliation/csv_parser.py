@@ -104,6 +104,40 @@ def _stream_realised(src):
     return round(total, 2)
 
 
+def _misc_sales_total(src):
+    """MISC sales = each invoice's INVTOT counted once (grouped by BILLNO).
+    Robust to rows where a comma inside a description shifted the columns and
+    zeroed ITM_AMOUNT. Falls back to summing ITM_AMOUNT if BILLNO/INVTOT
+    are not present. When the file is clean, this equals SUM(ITM_AMOUNT)."""
+    rdr = _reader(src)
+    if rdr is None:
+        return 0.0
+    try:
+        header = next(rdr)
+    except StopIteration:
+        return 0.0
+    i_bill = _find_idx(header, "BILLNO", ["billno", "bill_no"])
+    i_inv = _find_idx(header, "INVTOT", ["invtot", "inv_tot"])
+    i_itm = _find_idx(header, "ITM_AMOUNT", ["itm_amount"])
+    if i_bill is None or i_inv is None:
+        if i_itm is None:
+            return 0.0
+        total = 0.0
+        for row in rdr:
+            if i_itm < len(row):
+                total += _num(row[i_itm])
+        return round(total, 2)
+    per_bill = {}
+    for row in rdr:
+        b = row[i_bill].strip() if i_bill < len(row) else ""
+        it = _num(row[i_inv]) if i_inv < len(row) else 0.0
+        if not b:
+            continue
+        if it > per_bill.get(b, 0.0):   # one invoice total per bill; text-corrupted rows read as 0
+            per_bill[b] = it
+    return round(sum(per_bill.values()), 2)
+
+
 def parse_csv_figures(files, location, passthrough=None):
     passthrough = passthrough or {}
     BAL = ("BALANCE_AMT", ["balance", "outstand"])
@@ -142,7 +176,7 @@ def parse_csv_figures(files, location, passthrough=None):
         figures.update({
             "misc_bf": m_bfadj,
             "misc_bfadj": m_bfadj,
-            "misc_sales": _stream_sum(files.get("misc_sales_csv"), "ITM_AMOUNT", ["itm_amount", "amount"]),
+            "misc_sales": _misc_sales_total(files.get("misc_sales_csv")),
             "misc_credits": _num(passthrough.get("misc_credits")),
             "misc_discount": _num(passthrough.get("misc_discount")),
             "misc_collection": _stream_sum(files.get("misc_coll_csv"), "AMOUNT", ["amount"]),
