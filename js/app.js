@@ -12,60 +12,24 @@ const state = {
 };
 
 // ── File slots per location ────────────────────────────────────
-const FILE_SLOTS = {
-  male: [
-    { key: "open_pdf",       label: "Opening Debtors Summary", icon: "📂", desc: "Debtors Summary As At [opening date]",  required: true  },
-    { key: "close_pdf",      label: "Closing Debtors Summary", icon: "📁", desc: "Debtors Summary As At [closing date]", required: true  },
-    { key: "sales_pdf",      label: "Sales Report",            icon: "📊", desc: "Sales Report for the month",           required: true  },
-    { key: "misc_open_pdf",  label: "MISC Opening Summary",    icon: "📂", desc: "MISC Bills Debtors Summary (opening)", required: false },
-    { key: "misc_close_pdf", label: "MISC Closing Summary",    icon: "📁", desc: "MISC Bills Debtors Summary (closing)", required: false },
-    { key: "misc_sales_pdf", label: "MISC Sales Report",       icon: "📊", desc: "MISC Bills Sales Report",             required: false },
-    { key: "recon_pdf",      label: "Payment Reconciliation",  icon: "🧾", desc: "Payment Reconciliation Report Summary",required: true  },
-    { key: "collection_pdf", label: "Credits Summary",         icon: "💳", desc: "Cash Collection Credits Summary",     required: true  },
-  ],
-  hulhumale: [
-    { key: "open_pdf",            label: "Opening Debtors Summary", icon: "📂", desc: "Debtors Summary As At [opening date]",  required: true  },
-    { key: "close_pdf",           label: "Closing Debtors Summary", icon: "📁", desc: "Debtors Summary As At [closing date]", required: true  },
-    { key: "sales_pdf",           label: "Sales Report",            icon: "📊", desc: "Sales Report for the month",           required: true  },
-    { key: "misc_open_pdf",       label: "MISC Opening Summary",    icon: "📂", desc: "MISC Bills Debtors Summary (opening)", required: false },
-    { key: "misc_close_pdf",      label: "MISC Closing Summary",    icon: "📁", desc: "MISC Bills Debtors Summary (closing)", required: false },
-    { key: "misc_sales_pdf",      label: "MISC Sales Report",       icon: "📊", desc: "MISC Bills Sales Report",             required: false },
-    { key: "recon_pdf",           label: "Payment Reconciliation",  icon: "🧾", desc: "Payment Reconciliation Report Summary",required: true  },
-    { key: "collection_pdf",      label: "Credits Summary",         icon: "💳", desc: "Cash Collection Credits Summary",     required: true  },
-    { key: "billing_pdf",         label: "Billing System Collection", icon: "🧮", desc: "Electric fee subtotal, excl. GST / cost of service / ERP", required: true },
-    { key: "cash_collection_pdf", label: "Cash Collection Report",    icon: "🏦", desc: "Collections Dept report — Blueridge + WAMCO only",           required: true },
-  ],
-  thilafushi: [
-    { key: "open_pdf",       label: "Opening Debtors Summary", icon: "📂", desc: "Debtors Summary As At [opening date]",  required: true  },
-    { key: "close_pdf",      label: "Closing Debtors Summary", icon: "📁", desc: "Debtors Summary As At [closing date]", required: true  },
-    { key: "sales_pdf",      label: "Sales Report",            icon: "📊", desc: "Sales Report for the month",           required: true  },
-    { key: "misc_open_pdf",  label: "MISC Opening Summary",    icon: "📂", desc: "MISC Bills Debtors Summary (opening)", required: false },
-    { key: "misc_close_pdf", label: "MISC Closing Summary",    icon: "📁", desc: "MISC Bills Debtors Summary (closing)", required: false },
-    { key: "misc_sales_pdf", label: "MISC Sales Report",       icon: "📊", desc: "MISC Bills Sales Report",             required: false },
-    { key: "recon_pdf",      label: "Payment Reconciliation",  icon: "🧾", desc: "Payment Reconciliation Report Summary",required: true  },
-    { key: "collection_pdf", label: "Credits Summary",         icon: "💳", desc: "Cash Collection Credits Summary",     required: true  },
-  ],
-  gulhi_falhu: [
-    { key: "open_pdf",       label: "Opening Debtors Summary", icon: "📂", desc: "Debtors Summary As At [opening date]",  required: true  },
-    { key: "close_pdf",      label: "Closing Debtors Summary", icon: "📁", desc: "Debtors Summary As At [closing date]", required: true  },
-    { key: "sales_pdf",      label: "Sales Report",            icon: "📊", desc: "Sales Report for the month",           required: true  },
-    { key: "misc_open_pdf",  label: "MISC Opening Summary",    icon: "📂", desc: "MISC Bills Debtors Summary (opening)", required: false },
-    { key: "misc_close_pdf", label: "MISC Closing Summary",    icon: "📁", desc: "MISC Bills Debtors Summary (closing)", required: false },
-    { key: "misc_sales_pdf", label: "MISC Sales Report",       icon: "📊", desc: "MISC Bills Sales Report",             required: false },
-    { key: "recon_pdf",      label: "Payment Reconciliation",  icon: "🧾", desc: "Payment Reconciliation Report Summary",required: true  },
-    { key: "collection_pdf", label: "Credits Summary",         icon: "💳", desc: "Cash Collection Credits Summary",     required: true  },
-  ],
-  other_islands: [
-    { key: "open_pdf",       label: "Opening Debtors Summary", icon: "📂", desc: "Debtors Summary As At [opening date]",  required: true  },
-    { key: "close_pdf",      label: "Closing Debtors Summary", icon: "📁", desc: "Debtors Summary As At [closing date]", required: true  },
-    { key: "sales_pdf",      label: "Sales Report",            icon: "📊", desc: "Sales Report for the month",           required: true  },
-    { key: "misc_open_pdf",  label: "MISC Opening Summary",    icon: "📂", desc: "MISC Bills Debtors Summary (opening)", required: false },
-    { key: "misc_close_pdf", label: "MISC Closing Summary",    icon: "📁", desc: "MISC Bills Debtors Summary (closing)", required: false },
-    { key: "misc_sales_pdf", label: "MISC Sales Report",       icon: "📊", desc: "MISC Bills Sales Report",             required: false },
-    { key: "recon_pdf",      label: "Payment Reconciliation",  icon: "🧾", desc: "Payment Reconciliation Report Summary",required: true  },
-    { key: "collection_pdf", label: "Credits Summary",         icon: "💳", desc: "Cash Collection Credits Summary",     required: true  },
-  ],
-};
+const FILE_SLOTS = (function () {
+  // Core CSV set — same for every location. MISC + prior-close are optional.
+  const core = [
+    { key: "open_csv",        label: "Opening Debtors (CSV)",  icon: "📂", desc: "Current-month opening debtor detail",           required: true  },
+    { key: "close_csv",       label: "Closing Debtors (CSV)",  icon: "📁", desc: "Current-month closing debtor detail",           required: true  },
+    { key: "sales_csv",       label: "Sales Report (CSV)",     icon: "📊", desc: "Current-month sales (invoice-level)",           required: true  },
+    { key: "collection_csv",  label: "Collection (CSV)",       icon: "🧾", desc: "Collection transactions",                       required: true  },
+    { key: "credits_csv",     label: "Credits (CSV)",          icon: "💳", desc: "Credits / Fine collection report",             required: false },
+    { key: "prior_close_csv", label: "Prior Closing (CSV)",    icon: "🗂️", desc: "Prior-month closing — enables Adjustment (1)", required: false },
+    { key: "misc_open_csv",   label: "MISC Opening (CSV)",     icon: "📂", desc: "MISC opening debtors",                          required: false },
+    { key: "misc_close_csv",  label: "MISC Closing (CSV)",     icon: "📁", desc: "MISC closing debtors",                          required: false },
+    { key: "misc_sales_csv",  label: "MISC Sales (CSV)",       icon: "📊", desc: "MISC sales",                                    required: false },
+    { key: "misc_coll_csv",   label: "MISC Collection (CSV)",  icon: "🧾", desc: "MISC reconciled collection",                    required: false },
+  ];
+  const all = {};
+  ["male","thilafushi","gulhi_falhu","other_islands","hulhumale"].forEach(loc => { all[loc] = core.slice(); });
+  return all;
+})();
 
 const LOCATION_NAMES = {
   male:        "Male'",
@@ -231,7 +195,7 @@ function renderUploadSlots() {
       <div class="file-input-wrap">
         <label class="file-btn" id="btn_${slot.key}">
           Choose
-          <input type="file" accept=".pdf" data-key="${slot.key}" onchange="onFileChosen(this)">
+          <input type="file" accept=".csv" data-key="${slot.key}" onchange="onFileChosen(this)">
         </label>
       </div>`;
     grid.appendChild(div);
@@ -279,6 +243,11 @@ async function startParsing() {
     const form = new FormData();
     form.append("location", state.location);
     form.append("report_date", state.date);
+    // pass through typed values so the backend can fold them in
+    ["blueridge","wamco","elec_bf"].forEach(k => {
+      const v = state.figures[k];
+      if (v !== undefined && v !== null && v !== "") form.append(k, v);
+    });
 
     const slots = FILE_SLOTS[state.location] || [];
     for (const slot of slots) {
@@ -287,7 +256,7 @@ async function startParsing() {
       }
     }
 
-    const res = await fetch(`${API_URL}/parse`, {
+    const res = await fetch(`${API_URL}/parse_csv`, {
       method: "POST",
       body: form,
       signal: AbortSignal.timeout(120000)  // 2 minute timeout
@@ -420,7 +389,7 @@ async function generateReport() {
     const a    = document.createElement("a");
     const monthStr = state.month ? state.month.replace("-", "_") : "report";
     a.href     = url;
-    a.download = `${state.location.toUpperCase()}_${monthStr}_Debtors_Reconciliation.docx`;
+    a.download = `${state.location.toUpperCase()}_${monthStr}_Debtors_Reconciliation.xlsx`;
     a.click();
     URL.revokeObjectURL(url);
 
@@ -430,6 +399,6 @@ async function generateReport() {
     errorMsg.style.display = "block";
   } finally {
     btn.disabled = false;
-    text.textContent = "⬇ Download .docx Report";
+    text.textContent = "⬇ Download .xlsx Report";
   }
 }
