@@ -30,6 +30,7 @@
   <button class="top-tab active" data-tab="recon">Reconciliation</button>
   <button class="top-tab" data-tab="adjustment">Adjustment</button>
   <button class="top-tab" data-tab="adjustment2">Adjustment (2)</button>
+  <button class="top-tab" data-tab="miscAdj2">MISC Adj (2)</button>
 </div>
 
 <!-- ════════════════════════════════════════════════════════════ -->
@@ -362,16 +363,58 @@
   </div>
 </div><!-- /#adjustment2Tab -->
 
+<div id="miscAdj2Tab" style="display:none;">
+  <div class="app-body">
+    <main class="main-content">
+      <section class="step-panel active">
+        <div class="panel-header">
+          <h1 class="panel-title">MISC Adjustment (2)</h1>
+          <p class="panel-desc">
+            MISC bills carry no invoice number, so this keys on the bill reference
+            (e.g. <strong>MISC/49/2026</strong>). For each bill:
+            <strong>residual = Closing - Opening - Sales + Collection.</strong>
+            Any non-zero residual is a MISC adjustment - typically a bill cleared from
+            the ledger without a matching collection (a write-off, waiver or reclass).
+            The residuals sum to the MISC Adjustment (2) on the statement.
+          </p>
+        </div>
+
+        <div class="adj-layout">
+          <div class="adj-left">
+            <div class="upload-grid" id="miscA2UploadGrid"></div>
+
+            <div class="panel-actions">
+              <button class="btn-primary" id="miscA2GenerateBtn" disabled>&#11015; Generate MISC Adjustment (2) File</button>
+            </div>
+
+            <p class="review-note" id="miscA2Status"></p>
+          </div>
+
+          <aside class="adj-right">
+            <div class="work-title">HOW MISC ADJUSTMENT (2) IS FOUND</div>
+            <div class="work-steps">
+              <p class="review-note">Opening and closing MISC debtors are diffed per bill,
+              netted against MISC sales and collection. A bill whose balance left the ledger
+              without a matching payment shows up as the adjustment.</p>
+            </div>
+          </aside>
+        </div>
+      </section>
+    </main>
+  </div>
+</div><!-- /#miscAdj2Tab -->
+
 <script src="js/app.js"></script>
 <script src="js/adjustment.js"></script>
 <script src="js/adjustment2.js"></script>
+<script src="js/misc_adjustment2.js"></script>
 <script>
 /* Unified tab switcher — owns all three tabs. Bound inside DOMContentLoaded so
    it registers AFTER any handler in adjustment.js; running last means the final
    panel visibility is always correct even if an older two-tab switcher also
    fires. Non-blocking, so the Adjustment tab's own first-open init still runs. */
 document.addEventListener("DOMContentLoaded", function () {
-  var PANELS = { recon: "reconTab", adjustment: "adjustmentTab", adjustment2: "adjustment2Tab" };
+  var PANELS = { recon: "reconTab", adjustment: "adjustmentTab", adjustment2: "adjustment2Tab", miscAdj2: "miscAdj2Tab" };
   document.querySelectorAll(".top-tab").forEach(function (btn) {
     btn.addEventListener("click", function () {
       document.querySelectorAll(".top-tab").forEach(function (b) { b.classList.remove("active"); });
@@ -383,6 +426,9 @@ document.addEventListener("DOMContentLoaded", function () {
       });
       if (target === "adjustment2" && typeof window.initAdjustment2Tab === "function") {
         window.initAdjustment2Tab();
+      }
+      if (target === "miscAdj2" && typeof window.initMiscAdj2Tab === "function") {
+        window.initMiscAdj2Tab();
       }
     });
   });
