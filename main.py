@@ -232,14 +232,10 @@ async def misc_adjustments2(
             _misc_rows(await misc_sales_csv.read()) if misc_sales_csv else [],
             _misc_rows(await misc_coll_csv.read()) if misc_coll_csv else [],
         )
-        return StreamingResponse(
-            misc_xlsx_bytes(res),
-            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            headers={
-                "X-MiscAdj2-Summary": misc_summary_b64(res),
-                "Content-Disposition": 'attachment; filename="MISC_Adjustment2.xlsx"',
-            },
-        )
+        import base64
+        xlsx_b64 = base64.b64encode(misc_xlsx_bytes(res).getvalue()).decode()
+        return {"rows": res["rows"], "total": res["total"],
+                "n_rows": res["n_rows"], "xlsx_b64": xlsx_b64}
     except Exception as e:
         raise HTTPException(500, f"MISC Adjustment (2) error: {str(e)}")
 
