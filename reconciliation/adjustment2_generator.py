@@ -144,23 +144,38 @@ def detect(coll_rows, open_rows, close_rows, sales_rows, recon_month,
                 coll_by_inv[iv]=coll_by_inv.get(iv,0.0)+_num(r.get(CAMT))
                 coll_meta.setdefault(iv, r)
 
+    # per-invoice opening balance and current-month sales (for the Class A residual)
+    c_bal=_find(cf,BAL,["balance","outstand"])
+    open_bal={}
+    if open_rows:
+        oi=_find(open_rows[0].keys(),INV,["invoice"]); ob=_find(open_rows[0].keys(),BAL,["balance","outstand"])
+        for r in open_rows:
+            iv=(r.get(oi) or "").strip()
+            if iv: open_bal[iv]=open_bal.get(iv,0.0)+_num(r.get(ob))
+    sale_by_inv=sales_amounts(sales_rows)
+
     rows=[]
-    # CLASS A: bill dated after month-end with a payment already applied, where that
-    # payment is NOT (fully) in this month's collection -> a genuine timing gap.
-    # If the payment IS in this month's collection, the invoice reconciles normally
-    # (sale, payment and closing balance all in-period) and is NOT an adjustment.
-    if c_bd and c_pay:
+    # CLASS A: a payment sits on the closing debtor record but is NOT in this
+    # month's collection (it was recorded in another period), so the closing
+    # balance is off by that payment. This is detected by the per-invoice
+    # reconciliation residual  close - open - sales + collection  being non-zero
+    # for any closing invoice that carries a payment. Using the residual (not
+    # pay - collection) means normally-paid invoices - including those paid across
+    # several months - net to zero and are not flagged. Independent of BILL_DATE,
+    # so it catches in-month bills whose payment lands in a later period too.
+    if c_pay and c_bal:
         for r in close_rows:
-            bd=_date(r.get(c_bd)); pay=_num(r.get(c_pay))
-            if bd and bd>month_end and pay>EPS:
+            pay=_num(r.get(c_pay))
+            if pay>EPS:
                 iv=(r.get(c_inv) or "").strip()
-                gap=round(pay - coll_by_inv.get(iv,0.0), 2)   # payment not covered by this month's collection
-                if gap>EPS:
+                residual=round(_num(r.get(c_bal)) - open_bal.get(iv,0.0)
+                               - sale_by_inv.get(iv,0.0) + coll_by_inv.get(iv,0.0), 2)
+                if abs(residual)>EPS:
                     rows.append({"invoice_no":iv,
                                  "account_no":(r.get(c_acc) or "").strip() if c_acc else "",
                                  "bill_ref":(r.get(c_ref) or "").strip() if c_ref else "",
-                                 "amount":round(-gap,2), "class":"A",
-                                 "reason":"late payment (paid, not in this month's collection)"})
+                                 "amount":residual, "class":"A",
+                                 "reason":"payment not in this month's collection"})
     # CLASS B & CLASS C from collection
     B=[]; Ctot={}
     for r in coll_rows:
