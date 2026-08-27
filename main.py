@@ -18,6 +18,10 @@ from reconciliation.calculator import calculate
 from reconciliation.generator import generate_docx
 from reconciliation.csv_parser import parse_csv_figures
 from reconciliation.generator_xlsx import generate_xlsx
+from reconciliation.misc_adjustment2_generator import (
+    detect_misc, _rows as _misc_rows,
+    generate_xlsx_bytes as misc_xlsx_bytes, summary_b64 as misc_summary_b64,
+)
 app = FastAPI(title="STELCO Debtors Reconciliation API")
 app.add_middleware(
     CORSMiddleware,
@@ -213,6 +217,33 @@ async def adjustments(
 # Attributes the plug to realised bill payments that reduced no open
 # debtor balance (prior-period invoices absent from both debtor ledgers).
 # ----------------------------------------------------------------------
+@app.post("/misc_adjustments2")
+async def misc_adjustments2(
+    misc_open_csv:  UploadFile = File(...),   # current-month MISC opening (= prior MISC closing)
+    misc_close_csv: UploadFile = File(...),   # current-month MISC closing
+    misc_sales_csv: UploadFile = File(None),  # current-month MISC sales
+    misc_coll_csv:  UploadFile = File(None),  # current-month MISC collection
+):
+    """Itemise the MISC Adjustment (2): per-bill closing - opening - sales + collection."""
+    try:
+        res = detect_misc(
+            _misc_rows(await misc_open_csv.read()),
+            _misc_rows(await misc_close_csv.read()),
+            _misc_rows(await misc_sales_csv.read()) if misc_sales_csv else [],
+            _misc_rows(await misc_coll_csv.read()) if misc_coll_csv else [],
+        )
+        return StreamingResponse(
+            misc_xlsx_bytes(res),
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers={
+                "X-MiscAdj2-Summary": misc_summary_b64(res),
+                "Content-Disposition": 'attachment; filename="MISC_Adjustment2.xlsx"',
+            },
+        )
+    except Exception as e:
+        raise HTTPException(500, f"MISC Adjustment (2) error: {str(e)}")
+
+
 @app.post("/adjustments2")
 async def adjustments2(
     recon_month: str = Form(...),                # "2026-05"
